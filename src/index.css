@@ -1,0 +1,301 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Fonts ── */
+  --font-sans: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Dark palette (default) ── */
+  --color-surface:                    #0d1117;
+  --color-surface-dim:                #0d1117;
+  --color-surface-bright:             #313742;
+  --color-surface-container-lowest:   #080c12;
+  --color-surface-container-low:      #151b26;
+  --color-surface-container:          #1a2030;
+  --color-surface-container-high:     #232a38;
+  --color-surface-container-highest:  #2e3544;
+  --color-on-surface:                 #e2e6f4;
+  --color-on-surface-variant:         #b0b8cc;
+  --color-inverse-surface:            #e2e6f4;
+  --color-inverse-on-surface:         #2a3040;
+  --color-outline:                    #7a84a0;
+  --color-outline-variant:            #3a4258;
+  --color-surface-tint:               #818cf8;
+  --color-surface-variant:            #2e3544;
+
+  /* Primary – indigo/violet */
+  --color-primary:                    #818cf8;
+  --color-on-primary:                 #1a0080;
+  --color-primary-container:          #6366f1;
+  --color-on-primary-container:       #ffffff;
+  --color-inverse-primary:            #4f46e5;
+  --color-primary-fixed:              #e0e7ff;
+  --color-primary-fixed-dim:          #818cf8;
+  --color-on-primary-fixed:           #1e1b4b;
+  --color-on-primary-fixed-variant:   #3730a3;
+
+  /* Secondary – cyan */
+  --color-secondary:                  #22d3ee;
+  --color-on-secondary:               #003640;
+  --color-secondary-container:        #06b6d4;
+  --color-on-secondary-container:     #00424e;
+  --color-secondary-fixed:            #cffafe;
+  --color-secondary-fixed-dim:        #22d3ee;
+  --color-on-secondary-fixed:         #001f26;
+  --color-on-secondary-fixed-variant: #0891b2;
+
+  /* Tertiary – violet */
+  --color-tertiary:                   #c084fc;
+  --color-on-tertiary:                #3b0080;
+  --color-tertiary-container:         #a855f7;
+  --color-on-tertiary-container:      #2e0063;
+  --color-tertiary-fixed:             #f3e8ff;
+  --color-tertiary-fixed-dim:         #c084fc;
+  --color-on-tertiary-fixed:          #1e003d;
+  --color-on-tertiary-fixed-variant:  #7c3aed;
+
+  /* Error */
+  --color-error:                      #fca5a5;
+  --color-on-error:                   #7f1d1d;
+  --color-error-container:            #991b1b;
+  --color-on-error-container:         #fee2e2;
+
+  /* Background */
+  --color-background:                 #0d1117;
+  --color-on-background:              #e2e6f4;
+
+  /* ── Spacing ── */
+  --spacing-gutter:    1.5rem;
+  --spacing-space-xs:  0.25rem;
+  --spacing-space-sm:  0.5rem;
+  --spacing-space-md:  1rem;
+  --spacing-space-lg:  1.5rem;
+  --spacing-space-xl:  2.5rem;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Light mode overrides
+══════════════════════════════════════════════════════════ */
+html:not(.dark) {
+  --color-surface:                    #f8fafc;
+  --color-surface-dim:                #f1f5f9;
+  --color-surface-bright:             #ffffff;
+  --color-surface-container-lowest:   #ffffff;
+  --color-surface-container-low:      #f8fafc;
+  --color-surface-container:          #f1f5f9;
+  --color-surface-container-high:     #e2e8f0;
+  --color-surface-container-highest:  #cbd5e1;
+  --color-on-surface:                 #0f172a;
+  --color-on-surface-variant:         #475569;
+  --color-outline:                    #64748b;
+  --color-outline-variant:            #cbd5e1;
+  --color-surface-variant:            #e2e8f0;
+
+  --color-primary:                    #4f46e5;
+  --color-on-primary:                 #ffffff;
+  --color-primary-container:          #6366f1;
+  --color-on-primary-container:       #ffffff;
+  --color-primary-fixed:              #e0e7ff;
+  --color-primary-fixed-dim:          #818cf8;
+  --color-on-primary-fixed:           #1e1b4b;
+  --color-on-primary-fixed-variant:   #3730a3;
+
+  --color-secondary:                  #0284c7;
+  --color-on-secondary:               #ffffff;
+  --color-secondary-container:        #0ea5e9;
+  --color-on-secondary-container:     #ffffff;
+  --color-secondary-fixed:            #e0f7fa;
+  --color-secondary-fixed-dim:        #22d3ee;
+  --color-on-secondary-fixed:         #001f26;
+
+  --color-tertiary:                   #7c3aed;
+  --color-on-tertiary:                #ffffff;
+  --color-tertiary-container:         #a855f7;
+  --color-on-tertiary-container:      #ffffff;
+  --color-tertiary-fixed:             #f3e8ff;
+  --color-tertiary-fixed-dim:         #c084fc;
+  --color-on-tertiary-fixed:          #1e003d;
+  --color-on-tertiary-fixed-variant:  #7c3aed;
+
+  --color-error:                      #dc2626;
+  --color-on-error:                   #ffffff;
+  --color-error-container:            #fee2e2;
+  --color-on-error-container:         #7f1d1d;
+
+  --color-background:                 #f8fafc;
+  --color-on-background:              #0f172a;
+}
+
+html:not(.dark) body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) aside {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-right: 1px solid #e2e8f0 !important;
+}
+
+html:not(.dark) header {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html:not(.dark) .bg-surface-container\/60,
+html:not(.dark) .bg-surface-container\/70,
+html:not(.dark) .bg-surface-container-low\/80,
+html:not(.dark) .bg-surface-container-low\/70,
+html:not(.dark) .bg-surface-container-lowest\/90,
+html:not(.dark) .bg-surface-container-lowest\/80,
+html:not(.dark) .bg-surface-container-lowest\/85 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+html:not(.dark) .text-on-surface         { color: #0f172a !important; }
+html:not(.dark) .text-on-surface-variant { color: #475569 !important; }
+html:not(.dark) .text-outline            { color: #64748b !important; }
+html:not(.dark) .bg-surface-container-highest { background-color: #e2e8f0 !important; }
+html:not(.dark) .bg-surface-container-high    { background-color: #f1f5f9 !important; }
+html:not(.dark) .bg-surface-container-high\/80 { background-color: rgba(226,232,240,.85) !important; }
+
+/* ══════════════════════════════════════════════════════════
+   Base Reset & Typography
+══════════════════════════════════════════════════════════ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+/* Headings use Plus Jakarta Sans */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-feature-settings: 'kern', 'liga';
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+/* Monospace */
+code, kbd, samp, pre {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-feature-settings: 'calt', 'liga';
+}
+
+/* ══════════════════════════════════════════════════════════
+   Scrollbar
+══════════════════════════════════════════════════════════ */
+::-webkit-scrollbar         { width: 5px; height: 5px; }
+::-webkit-scrollbar-track   { background: transparent; }
+::-webkit-scrollbar-thumb   { background: rgba(122,132,160,0.22); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(122,132,160,0.42); }
+
+/* ══════════════════════════════════════════════════════════
+   Material Symbols
+══════════════════════════════════════════════════════════ */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Page layout helpers
+══════════════════════════════════════════════════════════ */
+
+/* Consistent page section eyebrow */
+.section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Spotlight glow on cards */
+.spotlight-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(99,102,241,.12), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.group:hover .spotlight-glow { opacity: 1; }
+
+/* ══════════════════════════════════════════════════════════
+   Micro-animations
+══════════════════════════════════════════════════════════ */
+@keyframes fadeUp   { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
+@keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+@keyframes scaleIn  { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:none; } }
+@keyframes floatA   { 0%,100%{transform:translate3d(0,0,0) scale(1);} 50%{transform:translate3d(22px,-16px,0) scale(1.06);} }
+@keyframes floatB   { 0%,100%{transform:translate3d(0,0,0) scale(1);} 50%{transform:translate3d(-18px,12px,0) scale(1.04);} }
+@keyframes shimmerMove { from{transform:translateX(-100%);} to{transform:translateX(100%);} }
+@keyframes pulseRing   { 0%{transform:scale(1);opacity:.6;} 100%{transform:scale(2.4);opacity:0;} }
+@keyframes panGradient { from{background-position:0% 50%;} to{background-position:100% 50%;} }
+@keyframes drawStroke  { to{stroke-dashoffset:0;} }
+
+.anim-fade-up   { animation: fadeUp  .55s cubic-bezier(.2,.7,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-fade-in   { animation: fadeIn  .4s ease both; }
+.anim-scale-in  { animation: scaleIn .3s cubic-bezier(.2,.8,.2,1) both; }
+.anim-float-a   { animation: floatA 14s ease-in-out infinite; }
+.anim-float-b   { animation: floatB 18s ease-in-out infinite; }
+.anim-pan       { background-size:200% 100%; animation: panGradient 5s ease-in-out infinite alternate; }
+.anim-draw      { stroke-dasharray:100; stroke-dashoffset:100; animation: drawStroke 1.4s .5s ease-out forwards; }
+
+/* Shimmer bar overlay */
+.shimmer-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
+  animation: shimmerMove 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,*::before,*::after {
+    animation-duration:0.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.01ms !important;
+  }
+}
+

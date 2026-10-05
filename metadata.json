@@ -1,0 +1,6 @@
+{
+  "name": "NexusPM AI - Enterprise Suite",
+  "description": "Enterprise AI project management suite with intelligent skills matrix, real-time allocation timeline, and automated sprint intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
