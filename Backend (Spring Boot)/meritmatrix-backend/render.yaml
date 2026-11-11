@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: meritmatrix-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: SPRING_DATASOURCE_URL
+        value: jdbc:postgresql://ep-dry-mode-az09bfly-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      - key: SPRING_DATASOURCE_USERNAME
+        value: neondb_owner
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false   # marks this as a secret — Render will prompt you to enter it in the dashboard
+      - key: ALLOWED_ORIGINS
+        sync: false   # set this to your deployed frontend URL, e.g. https://meritmatrix.vercel.app
+
