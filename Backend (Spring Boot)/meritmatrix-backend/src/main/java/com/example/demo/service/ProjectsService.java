@@ -1,5 +1,9 @@
 package com.example.demo.service;
 
+import com.example.demo.repository.ProjectsRepository;
+import com.example.demo.repository.ProjectsRepository.AssigneeRecord;
+import com.example.demo.repository.ProjectsRepository.TaskRecord;
+import com.example.demo.repository.ProjectsRepository.WorkstreamRecord;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -9,17 +13,14 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Business logic behind ProjectsPage.jsx.
  *
- * Owns the workstream store, the overview stats and the filter / search / sort /
- * group logic. ProjectsController only handles HTTP and delegates here.
- *
- * Data is held in memory so the class runs on its own. To go live, replace the
- * store with a repository and keep the derived values (progress, due soon,
- * overview, counts) computed here.
+ * Reads raw workstreams from {@link ProjectsRepository} and computes everything
+ * derived from them (progress, due soon, overview, counts) plus the filter /
+ * search / sort / group logic. ProjectsController only handles HTTP and
+ * delegates here.
  *
  * Requires Spring Boot 3.x and Java 17+.
  */
@@ -117,7 +118,7 @@ public class ProjectsService {
     }
 
     /* ======================================================================
-       Constants and sample data
+       Constants
        ====================================================================== */
 
     /** A workstream is "due soon" if it is due within this many days (overdue counts too). */
@@ -126,60 +127,15 @@ public class ProjectsService {
     private static final List<String> SORTS = List.of("default", "progress-desc", "progress-asc", "urgent", "name");
     private static final DateTimeFormatter DUE_FORMAT = DateTimeFormatter.ofPattern("MMM dd", Locale.US);
 
-    private static final Assignee ALEX = new Assignee("Alex Rivera", "AR", "bg-primary-container text-on-primary-container");
-    private static final Assignee ELENA = new Assignee("Elena Vance", "EV", "bg-secondary-container text-on-secondary-container");
-    private static final Assignee MARCUS = new Assignee("Marcus Chen", "MC", "bg-tertiary-container text-on-tertiary-container");
-    private static final Assignee SOPHIA = new Assignee("Sophia Patel", "SP", "bg-surface-container-highest text-on-surface");
-    private static final Assignee DAVID = new Assignee("David Kim", "DK", "bg-primary text-on-primary");
+    /* ======================================================================
+       Dependencies
+       ====================================================================== */
 
-    /** Internal shape. The public Project record is derived from it on every read. */
-    private record Stored(
-            String id, String code, String title, String description,
-            Status status, LocalDate dueDate, List<Assignee> assignees, List<Task> tasks) {
-
-        Stored withTasks(List<Task> newTasks) {
-            return new Stored(id, code, title, description, status, dueDate, assignees, newTasks);
-        }
-    }
-
+    private final ProjectsRepository repo;
     private final Clock clock = Clock.systemDefaultZone();
-    private final AtomicInteger projectSeq = new AtomicInteger(1);
-    private final AtomicInteger taskSeq = new AtomicInteger(1);
-    private final List<Stored> store = Collections.synchronizedList(new ArrayList<>());
 
-    public ProjectsService() {
-        LocalDate today = LocalDate.now(clock);
-
-        seed("Realtime Multi-Agent Orchestrator",
-                "Core engine phase 2: event bus, agent scheduling and state replication.",
-                Status.IN_PROGRESS, today.plusDays(12), List.of(ALEX, ELENA), 4,
-                "Core interface architecture and token bindings", "Event bus streaming integration",
-                "Agent scheduler", "State replication", "Load testing", "Rollout runbook");
-
-        seed("Kinetic UI Token Library",
-                "Shader synthesis and design tokens shared across client surfaces.",
-                Status.IN_PROGRESS, today.plusDays(4), List.of(MARCUS), 3,
-                "Token schema", "Shader pipeline test suite", "Theme switching", "Docs site", "Release candidate");
-
-        seed("Zero-Trust Access Control",
-                "Neural boundary gateway with cryptographic session verification.",
-                Status.QA_REVIEW, today.plusDays(2), List.of(ELENA, DAVID), 5,
-                "Gateway policy engine", "Session verification", "Audit log", "Penetration test fixes", "Sign-off");
-
-        seed("Hyperion Client Portal",
-                "Customer-facing dashboards, billing views and onboarding.",
-                Status.REVIEW_REQUIRED, today.plusDays(15), List.of(MARCUS, SOPHIA), 3,
-                "Dashboards", "Billing views", "Onboarding flow insight copy", "Accessibility review");
-
-        seed("Global Kubernetes Mesh",
-                "TPU cluster expansion and infrastructure hardening.",
-                Status.READY_FOR_STAGING, today.plusDays(23), List.of(DAVID, ALEX), 4,
-                "Cluster expansion", "Network policies", "Autoscaling", "Staging smoke tests", "Cost report");
-
-        seed("Neural Prompt Evaluation Pipeline",
-                "Benchmark harness for comparing engine versions.",
-                Status.PLANNING, today.plusDays(30), List.of(SOPHIA), 0,
-                "Define benchmark set", "Harness skeleton", "Scoring rubric", "Dashboard");
+    public ProjectsService(ProjectsRepository repo) {
+        this.repo = repo;
     }
 
     /* ======================================================================
@@ -221,118 +177,83 @@ public class ProjectsService {
     }
 
     public Project get(String id) {
-        return toDto(find(id));
+        return repo.findById(id)
+                .map(this::toDto)
+                .orElseThrow(() -> new ProjectNotFoundException(id));
     }
 
     /** "New workstream": defaults to Planning, no assignees, one open task per non-blank title. */
     public Project create(String title, String description, String status, LocalDate dueDate, List<String> taskTitles) {
         Status s = status == null || status.isBlank() ? Status.PLANNING : Status.fromLabel(status);
-        int n = projectSeq.getAndIncrement();
+        int n = repo.nextProjectNumber();
 
-        List<Task> tasks = new ArrayList<>();
+        List<TaskRecord> tasks = new ArrayList<>();
         if (taskTitles != null) {
             for (String t : taskTitles) {
-                if (t != null && !t.isBlank()) tasks.add(new Task(nextTaskId(), t.trim(), false));
+                if (t != null && !t.isBlank()) tasks.add(new TaskRecord(repo.nextTaskId(), t.trim(), false));
             }
         }
 
-        Stored created = new Stored(
+        WorkstreamRecord created = new WorkstreamRecord(
                 "p" + n, "PRJ-" + (100 + n), title.trim(),
                 description == null || description.isBlank() ? "No description yet." : description.trim(),
-                s, dueDate, List.of(), List.copyOf(tasks));
-        store.add(created);
-        return toDto(created);
+                s.label(), dueDate, List.of(), List.copyOf(tasks));
+        return toDto(repo.save(created));
     }
 
     /** "Quick task": adds an open subtask and recalculates the project's progress. */
     public Project addTask(String projectId, String title) {
-        synchronized (store) {
-            int i = indexOf(projectId);
-            Stored current = store.get(i);
-            List<Task> tasks = new ArrayList<>(current.tasks());
-            tasks.add(new Task(nextTaskId(), title.trim(), false));
-            Stored updated = current.withTasks(List.copyOf(tasks));
-            store.set(i, updated);
-            return toDto(updated);
-        }
+        return repo.addTask(projectId, title.trim())
+                .map(this::toDto)
+                .orElseThrow(() -> new ProjectNotFoundException(projectId));
     }
 
     /** Ticks or unticks a subtask and recalculates the project's progress. */
     public Project setTaskDone(String projectId, String taskId, boolean done) {
-        synchronized (store) {
-            int i = indexOf(projectId);
-            Stored current = store.get(i);
-
-            boolean found = false;
-            List<Task> tasks = new ArrayList<>();
-            for (Task t : current.tasks()) {
-                if (t.id().equals(taskId)) {
-                    tasks.add(new Task(t.id(), t.title(), done));
-                    found = true;
-                } else {
-                    tasks.add(t);
-                }
-            }
-            if (!found) throw new TaskNotFoundException(taskId);
-
-            Stored updated = current.withTasks(List.copyOf(tasks));
-            store.set(i, updated);
-            return toDto(updated);
-        }
+        return repo.setTaskDone(projectId, taskId, done)
+                .map(this::toDto)
+                .orElseThrow(() -> missingProjectOrTask(projectId, taskId));
     }
 
     /* ======================================================================
        Derived values
        ====================================================================== */
 
-    private void seed(String title, String description, Status status, LocalDate due,
-                      List<Assignee> assignees, int doneCount, String... taskTitles) {
-        int n = projectSeq.getAndIncrement();
-        List<Task> tasks = new ArrayList<>();
-        for (int i = 0; i < taskTitles.length; i++) {
-            tasks.add(new Task(nextTaskId(), taskTitles[i], i < doneCount));
-        }
-        store.add(new Stored("p" + n, "PRJ-" + (100 + n), title, description,
-                status, due, assignees, List.copyOf(tasks)));
-    }
-
-    private String nextTaskId() {
-        return "t" + taskSeq.getAndIncrement();
-    }
-
     private List<Project> all() {
-        synchronized (store) {
-            return store.stream().map(this::toDto).toList();
-        }
+        return repo.findAll().stream().map(this::toDto).toList();
     }
 
-    private Stored find(String id) {
-        synchronized (store) {
-            return store.get(indexOf(id));
-        }
+    /** The repository returns empty for both cases, so check which one it was. */
+    private RuntimeException missingProjectOrTask(String projectId, String taskId) {
+        return repo.findById(projectId).isEmpty()
+                ? new ProjectNotFoundException(projectId)
+                : new TaskNotFoundException(taskId);
     }
 
-    private int indexOf(String id) {
-        synchronized (store) {
-            for (int i = 0; i < store.size(); i++) {
-                if (store.get(i).id().equals(id)) return i;
-            }
-        }
-        throw new ProjectNotFoundException(id);
-    }
+    private Project toDto(WorkstreamRecord r) {
+        Status status = Status.fromLabel(r.status());
+        List<Task> tasks = r.tasks().stream()
+                .map(t -> new Task(t.id(), t.title(), t.done()))
+                .toList();
+        List<Assignee> assignees = r.assignees().stream()
+                .map(ProjectsService::toAssignee)
+                .toList();
 
-    private Project toDto(Stored s) {
-        int total = s.tasks().size();
-        int done = (int) s.tasks().stream().filter(Task::done).count();
+        int total = tasks.size();
+        int done = (int) tasks.stream().filter(Task::done).count();
         int pct = total == 0 ? 0 : Math.round(done * 100f / total);
 
         return new Project(
-                s.id(), s.code(), s.title(), s.description(),
-                s.status().label, s.status().color, s.status().gradient,
+                r.id(), r.code(), r.title(), r.description(),
+                status.label, status.color, status.gradient,
                 pct, done, total,
-                s.dueDate() == null ? "TBD" : s.dueDate().format(DUE_FORMAT),
-                isUrgent(s.dueDate()),
-                s.assignees(), s.tasks());
+                r.dueDate() == null ? "TBD" : r.dueDate().format(DUE_FORMAT),
+                isUrgent(r.dueDate()),
+                assignees, tasks);
+    }
+
+    private static Assignee toAssignee(AssigneeRecord a) {
+        return new Assignee(a.name(), a.initials(), a.color());
     }
 
     private boolean isUrgent(LocalDate due) {

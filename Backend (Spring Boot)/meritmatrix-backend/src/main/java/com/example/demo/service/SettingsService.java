@@ -1,5 +1,8 @@
 package com.example.demo.service;
 
+import com.example.demo.repository.SettingsRepository;
+import com.example.demo.repository.SettingsRepository.Change;
+import com.example.demo.repository.SettingsRepository.SettingsRecord;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -13,14 +16,10 @@ import java.util.stream.Collectors;
 /**
  * Business logic behind SettingsPage.jsx.
  *
- * Owns the saved settings, validates every value the page can send, works out
- * which settings changed on a save, and builds the "current settings" summary
- * cards. SettingsController only handles HTTP and delegates here.
- *
- * Settings are held in memory so the class runs on its own. To go live, replace
- * the AtomicReference-style store with a repository (per workspace for the
- * workspace, engine, notification, security and data groups; per user for the
- * appearance group) and keep validation and derived values here.
+ * Validates every value the page can send, works out which settings changed on
+ * a save, and builds the "current settings" summary cards. The saved settings
+ * and the factory defaults live in {@link SettingsRepository}. SettingsController
+ * only handles HTTP and delegates here.
  *
  * Requires Spring Boot 3.x and Java 17+.
  */
@@ -45,18 +44,7 @@ public class SettingsService {
             // security
             boolean twoFactor, boolean signInAlerts, String sessionTimeout,
             // data
-            boolean aiLearning, String retention) {
-
-        Settings withTpu(int newTpu) {
-            return new Settings(capacity, sprintLength, weekStart, timezone, landing,
-                    engineVersion, newTpu, tpuBurst,
-                    theme, density, reduceMotion, keyHints,
-                    notifyClash, notifyEmail, notifyInApp, notifySlack,
-                    overloadAt, digest, quietHours, quietFrom, quietTo,
-                    twoFactor, signInAlerts, sessionTimeout,
-                    aiLearning, retention);
-        }
-    }
+            boolean aiLearning, String retention) {}
 
     public record Option(String value, String label) {}
 
@@ -98,7 +86,7 @@ public class SettingsService {
     }
 
     /* ======================================================================
-       Constants
+       Constants (dropdown choices and validation rules)
        ====================================================================== */
 
     private static final String VERIFIER_KEY = "0x8f2d49c81b94a201f92e6205ba8410294fc6b93b";
@@ -133,18 +121,16 @@ public class SettingsService {
     private static final Set<String> DIGESTS = Set.of("daily", "weekly", "off");
     private static final Pattern TIME = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
 
-    private static final Settings DEFAULTS = new Settings(
-            40, "14", "mon", "UTC", "projects",
-            "v3.4.2 Quantum", 78, true,
-            "system", "comfortable", false, true,
-            true, true, true, false,
-            40, "daily", false, "22:00", "07:00",
-            true, true, "60",
-            true, "90");
+    /* ======================================================================
+       Dependencies
+       ====================================================================== */
 
+    private final SettingsRepository repo;
     private final Clock clock = Clock.systemUTC();
-    private final Object lock = new Object();
-    private Settings current = DEFAULTS;
+
+    public SettingsService(SettingsRepository repo) {
+        this.repo = repo;
+    }
 
     /* ======================================================================
        Public API
@@ -162,11 +148,9 @@ public class SettingsService {
      */
     public SaveResult save(Settings incoming) {
         validate(incoming);
-        synchronized (lock) {
-            List<String> changed = changedKeys(current, incoming);
-            current = incoming;
-            return new SaveResult(incoming, changed, summary(incoming));
-        }
+        Change change = repo.update(current -> toRecord(incoming));
+        List<String> changed = changedKeys(toSettings(change.before()), incoming);
+        return new SaveResult(incoming, changed, summary(incoming));
     }
 
     /**
@@ -174,12 +158,10 @@ public class SettingsService {
      * keeps because it is owned by the running engine.
      */
     public SaveResult reset() {
-        synchronized (lock) {
-            Settings restored = DEFAULTS.withTpu(current.tpu());
-            List<String> changed = changedKeys(current, restored);
-            current = restored;
-            return new SaveResult(restored, changed, summary(restored));
-        }
+        Change change = repo.update(current -> repo.findDefaults().withTpu(current.tpu()));
+        Settings restored = toSettings(change.after());
+        List<String> changed = changedKeys(toSettings(change.before()), restored);
+        return new SaveResult(restored, changed, summary(restored));
     }
 
     /** "Download as JSON". Only settings exist in this service; add other data sources here. */
@@ -234,13 +216,37 @@ public class SettingsService {
     }
 
     /* ======================================================================
+       Mapping (service <-> repository records)
+       ====================================================================== */
+
+    private static Settings toSettings(SettingsRecord r) {
+        return new Settings(
+                r.capacity(), r.sprintLength(), r.weekStart(), r.timezone(), r.landing(),
+                r.engineVersion(), r.tpu(), r.tpuBurst(),
+                r.theme(), r.density(), r.reduceMotion(), r.keyHints(),
+                r.notifyClash(), r.notifyEmail(), r.notifyInApp(), r.notifySlack(),
+                r.overloadAt(), r.digest(), r.quietHours(), r.quietFrom(), r.quietTo(),
+                r.twoFactor(), r.signInAlerts(), r.sessionTimeout(),
+                r.aiLearning(), r.retention());
+    }
+
+    private static SettingsRecord toRecord(Settings s) {
+        return new SettingsRecord(
+                s.capacity(), s.sprintLength(), s.weekStart(), s.timezone(), s.landing(),
+                s.engineVersion(), s.tpu(), s.tpuBurst(),
+                s.theme(), s.density(), s.reduceMotion(), s.keyHints(),
+                s.notifyClash(), s.notifyEmail(), s.notifyInApp(), s.notifySlack(),
+                s.overloadAt(), s.digest(), s.quietHours(), s.quietFrom(), s.quietTo(),
+                s.twoFactor(), s.signInAlerts(), s.sessionTimeout(),
+                s.aiLearning(), s.retention());
+    }
+
+    /* ======================================================================
        Derived values
        ====================================================================== */
 
     private Settings snapshot() {
-        synchronized (lock) {
-            return current;
-        }
+        return toSettings(repo.findCurrent());
     }
 
     private static Options options() {

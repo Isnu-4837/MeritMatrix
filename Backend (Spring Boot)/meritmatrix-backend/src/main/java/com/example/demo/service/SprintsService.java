@@ -1,5 +1,9 @@
 package com.example.demo.service;
 
+import com.example.demo.repository.SprintsRepository;
+import com.example.demo.repository.SprintsRepository.AllocationRecord;
+import com.example.demo.repository.SprintsRepository.PersonRecord;
+import com.example.demo.repository.SprintsRepository.SprintRecord;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -9,23 +13,23 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
  * Business logic behind SprintsPage.jsx.
  *
- * Owns the team, their allocations and the milestone details. It works out each
- * person's booked hours and status, the overview cards, the filter counts, the
- * list of conflicts and the "Quick rebalance" that moves overflow hours to
- * people with free capacity. SprintsController only handles HTTP and delegates here.
+ * Reads the team, their allocations and the milestones from
+ * {@link SprintsRepository}. It works out each person's booked hours and status,
+ * the overview cards, the filter counts, the list of conflicts and the "Quick
+ * rebalance" that moves overflow hours to people with free capacity.
+ * SprintsController only handles HTTP and delegates here.
  *
  * "Resolved" is derived, not stored: the sprint is resolved when nobody is
  * booked over capacity, so the page's isConflictResolved flag can come from
  * the board response.
  *
- * Data is held in memory so the class runs on its own. To go live, replace the
- * people and allocation lists with repositories and keep the derived values here.
+ * Multi-step operations (board, rebalance, allocate, suggestion) run under one
+ * service-level lock so they always see a consistent set of allocations.
  *
  * Requires Spring Boot 3.x and Java 17+.
  */
@@ -136,17 +140,14 @@ public class SprintsService {
     }
 
     /* ======================================================================
-       Constants and sample data
+       Constants (business rules and filter values)
        ====================================================================== */
 
     private static final int CAPACITY = 40;        // weekly hours per person
-    private static final int CYCLE_DAY = 9;        // today, within the sprint
-    private static final int CYCLE_LENGTH = 14;    // sprint length in days
     private static final int WEEK_COUNT = 4;       // weeks shown on the board
     private static final int BENCH_FREE_HOURS = 15; // this many free hours or more counts as "on bench"
     private static final double WORK_START = 9;    // local working hours, used for timezone overlap
     private static final double WORK_END = 17;
-    private static final String SPRINT_NAME = "Sprint 14";
 
     private static final List<String> STATUSES = List.of("all", "overbooked", "bench", "capacity", "optimal");
     private static final List<String> SORTS = List.of("default", "load", "free", "name");
@@ -157,45 +158,21 @@ public class SprintsService {
     private static final DateTimeFormatter DAY_FORMAT = DateTimeFormatter.ofPattern("MMM dd", Locale.US);
     private static final DateTimeFormatter MONTH_FORMAT = DateTimeFormatter.ofPattern("MMM", Locale.US);
 
-    private record Person(String id, String name, String role, String squad, String zone, double utcOffset) {}
-
-    /** Internal allocation. `movable` marks work the rebalance is allowed to move. */
-    private record Alloc(
-            String id, String personId, String title, String detail, String tone,
-            int startWeek, int weeks, int hoursPerWeek, String milestoneId, boolean movable) {
-
-        Alloc withHours(int hours) {
-            return new Alloc(id, personId, title, detail, tone, startWeek, weeks, hours, milestoneId, movable);
-        }
-    }
-
     /** A planned transfer of overflow hours from one person to another. */
-    private record Plan(Person donor, Person receiver, Alloc source, int hours) {}
+    private record Plan(PersonRecord donor, PersonRecord receiver, AllocationRecord source, int hours) {}
 
-    private static final List<Person> PEOPLE = List.of(
-            new Person("alex", "Alex Rivera", "Staff Backend · UTC+1", "Core Infrastructure", "UTC", 0),
-            new Person("elena", "Elena Vance", "Lead Architect · PST", "Core Infrastructure", "PST", -8),
-            new Person("marcus", "Marcus Chen", "Sr. Frontend · EST", "Frontend Core", "EST", -5),
-            new Person("sophia", "Sophia Patel", "AI / ML Engineer · IST", "AI / ML Research", "IST", 5.5),
-            new Person("david", "David Kim", "DevOps / Cloud · UTC+0", "Core Infrastructure", "UTC", 0));
+    /* ======================================================================
+       Dependencies and state
+       ====================================================================== */
 
-    private static final List<Milestone> MILESTONES = List.of(
-            new Milestone("MS-904", "Zero-Trust Access Control", "elena", 32, 180, "Sprint 14 target"));
-
+    private final SprintsRepository repo;
     private final Clock clock = Clock.systemDefaultZone();
-    private final Object lock = new Object();
-    private final AtomicInteger allocSeq = new AtomicInteger(1);
-    private final List<Alloc> allocs = new ArrayList<>();
 
-    public SprintsService() {
-        // Hours add up to each person's weekly load in the current week.
-        seed("alex", "Realtime Multi-Agent Orchestrator", "Core Engine Phase 2", "primary", 0, 3, 28, null, false);
-        seed("alex", "Telemetry Sweep", null, "neutral", 1, 1, 12, null, true);
-        seed("elena", "Zero-Trust Access Control & Neural Boundary Gateway", "Arch Milestone 4", "accent", 0, 4, 32, "MS-904", false);
-        seed("marcus", "Kinetic UI Token Library", "Shader synthesis", "focus", 0, 3, 32, null, false);
-        seed("marcus", "Hyperion Client Portal Sprint Finish", null, "primary", 1, 2, 24, null, true);
-        seed("sophia", "Neural Prompt Evaluation Pipeline", null, "neutral", 0, 2, 24, null, false);
-        seed("david", "Global Kubernetes Mesh & TPU Cluster Expansion", "Infrastructure hardening", "mixed", 0, 4, 36, null, false);
+    /** Serializes multi-step operations so each one sees a consistent set of allocations. */
+    private final Object lock = new Object();
+
+    public SprintsService(SprintsRepository repo) {
+        this.repo = repo;
     }
 
     /* ======================================================================
@@ -224,7 +201,7 @@ public class SprintsService {
         synchronized (lock) {
             int cur = currentWeek();
 
-            List<PersonRow> everyone = PEOPLE.stream().map(p -> row(p, cur)).toList();
+            List<PersonRow> everyone = repo.findAllPeople().stream().map(p -> row(p, cur)).toList();
 
             // Squad and search narrow the scope; status counts are taken from that scope.
             List<PersonRow> scoped = everyone.stream()
@@ -262,14 +239,15 @@ public class SprintsService {
     public RebalanceResult rebalance() {
         synchronized (lock) {
             int cur = currentWeek();
+            List<PersonRecord> people = repo.findAllPeople();
             List<Move> moves = new ArrayList<>();
 
-            List<Person> donors = PEOPLE.stream()
+            List<PersonRecord> donors = people.stream()
                     .filter(p -> hoursOf(p.id(), cur) > CAPACITY)
-                    .sorted(Comparator.comparingInt((Person p) -> hoursOf(p.id(), cur)).reversed())
+                    .sorted(Comparator.comparingInt((PersonRecord p) -> hoursOf(p.id(), cur)).reversed())
                     .toList();
 
-            for (Person donor : donors) {
+            for (PersonRecord donor : donors) {
                 while (hoursOf(donor.id(), cur) > CAPACITY) {
                     Plan plan = nextPlan(donor, cur);
                     if (plan == null) break; // nothing movable or nobody free
@@ -278,7 +256,7 @@ public class SprintsService {
                 }
             }
 
-            int remaining = (int) PEOPLE.stream().filter(p -> hoursOf(p.id(), cur) > CAPACITY).count();
+            int remaining = (int) people.stream().filter(p -> hoursOf(p.id(), cur) > CAPACITY).count();
             return new RebalanceResult(moves, remaining, rebalanceMessage(moves, remaining),
                     board(ALL_SQUADS, "all", null, "default"));
         }
@@ -287,7 +265,7 @@ public class SprintsService {
     /** "Allocate member": adds an allocation. It may overbook the person; the board then shows the conflict. */
     public PersonRow allocate(String personId, String title, String detail,
                               int hoursPerWeek, int startWeek, int weeks, String tone) {
-        Person person = findPerson(personId);
+        PersonRecord person = findPerson(personId);
         String toneKey = tone == null || tone.isBlank() ? "primary" : tone;
 
         if (!TONES.contains(toneKey)) throw new InvalidQueryException("Unknown tone: " + toneKey);
@@ -302,7 +280,7 @@ public class SprintsService {
         }
 
         synchronized (lock) {
-            allocs.add(new Alloc("a" + allocSeq.getAndIncrement(), person.id(), title.trim(),
+            repo.saveAllocation(new AllocationRecord(repo.nextAllocationId(), person.id(), title.trim(),
                     detail == null || detail.isBlank() ? null : detail.trim(),
                     toneKey, startWeek, weeks, hoursPerWeek, null, true));
             return row(person, currentWeek());
@@ -311,9 +289,9 @@ public class SprintsService {
 
     /** Details for the expandable milestone panel. */
     public Milestone milestone(String id) {
-        return MILESTONES.stream()
-                .filter(m -> m.id().equals(id))
-                .findFirst()
+        return repo.findMilestoneById(id)
+                .map(m -> new Milestone(m.id(), m.title(), m.personId(),
+                        m.assignedHoursPerWeek(), m.costRatePerHour(), m.sprintTarget()))
                 .orElseThrow(() -> new MilestoneNotFoundException(id));
     }
 
@@ -321,21 +299,26 @@ public class SprintsService {
     public CopilotSuggestion suggestion() {
         synchronized (lock) {
             int cur = currentWeek();
-            Optional<Person> donor = PEOPLE.stream()
+            List<PersonRecord> people = repo.findAllPeople();
+            String sprintName = repo.findCurrentSprint().name();
+
+            Optional<PersonRecord> donor = people.stream()
                     .filter(p -> hoursOf(p.id(), cur) > CAPACITY)
                     .max(Comparator.comparingInt(p -> hoursOf(p.id(), cur)));
 
             if (donor.isEmpty()) {
-                Person busiest = PEOPLE.stream().max(Comparator.comparingInt(p -> hoursOf(p.id(), cur))).orElseThrow();
-                String detail = allocs.stream()
-                        .filter(a -> a.personId().equals(busiest.id()) && active(a, cur))
-                        .max(Comparator.comparingInt(Alloc::hoursPerWeek))
+                PersonRecord busiest = people.stream()
+                        .max(Comparator.comparingInt(p -> hoursOf(p.id(), cur)))
+                        .orElseThrow();
+                String detail = repo.findAllocationsByPersonId(busiest.id()).stream()
+                        .filter(a -> active(a, cur))
+                        .max(Comparator.comparingInt(AllocationRecord::hoursPerWeek))
                         .map(a -> "Suggestion: keep an eye on " + a.title() + " (" + a.hoursPerWeek() + "h/wk, the heaviest load)")
                         .orElse("Suggestion: nothing to do right now");
-                return new CopilotSuggestion(SPRINT_NAME + " is balanced. No allocation clashes.", detail, true);
+                return new CopilotSuggestion(sprintName + " is balanced. No allocation clashes.", detail, true);
             }
 
-            Person d = donor.get();
+            PersonRecord d = donor.get();
             Plan plan = nextPlan(d, cur);
             String detail = plan == null
                     ? "Suggestion: free up hours or add capacity, nobody has room to help"
@@ -349,16 +332,16 @@ public class SprintsService {
        ====================================================================== */
 
     /** Picks the donor's biggest movable allocation and the person with the most free hours. */
-    private Plan nextPlan(Person donor, int cur) {
+    private Plan nextPlan(PersonRecord donor, int cur) {
         int excess = hoursOf(donor.id(), cur) - CAPACITY;
         if (excess <= 0) return null;
 
-        Alloc source = allocs.stream()
-                .filter(a -> a.personId().equals(donor.id()) && a.movable() && active(a, cur))
-                .max(Comparator.comparingInt(Alloc::hoursPerWeek))
+        AllocationRecord source = repo.findAllocationsByPersonId(donor.id()).stream()
+                .filter(a -> a.movable() && active(a, cur))
+                .max(Comparator.comparingInt(AllocationRecord::hoursPerWeek))
                 .orElse(null);
 
-        Person receiver = PEOPLE.stream()
+        PersonRecord receiver = repo.findAllPeople().stream()
                 .filter(p -> !p.id().equals(donor.id()))
                 .filter(p -> CAPACITY - hoursOf(p.id(), cur) > 0)
                 .max(Comparator.comparingInt(p -> CAPACITY - hoursOf(p.id(), cur)))
@@ -372,13 +355,12 @@ public class SprintsService {
     }
 
     private void apply(Plan plan) {
-        Alloc src = plan.source();
-        int index = allocs.indexOf(src);
+        AllocationRecord src = plan.source();
         int left = src.hoursPerWeek() - plan.hours();
-        if (left > 0) allocs.set(index, src.withHours(left));
-        else allocs.remove(index);
+        if (left > 0) repo.saveAllocation(src.withHours(left));
+        else repo.deleteAllocation(src.id());
 
-        allocs.add(new Alloc("a" + allocSeq.getAndIncrement(), plan.receiver().id(), src.title(),
+        repo.saveAllocation(new AllocationRecord(repo.nextAllocationId(), plan.receiver().id(), src.title(),
                 "Reallocated +" + plan.hours() + "h", "moved",
                 src.startWeek(), src.weeks(), plan.hours(), src.milestoneId(), true));
     }
@@ -404,19 +386,12 @@ public class SprintsService {
        Derived values
        ====================================================================== */
 
-    private void seed(String personId, String title, String detail, String tone,
-                      int startWeek, int weeks, int hours, String milestoneId, boolean movable) {
-        allocs.add(new Alloc("a" + allocSeq.getAndIncrement(), personId, title, detail, tone,
-                startWeek, weeks, hours, milestoneId, movable));
-    }
-
-    private Person findPerson(String id) {
-        return PEOPLE.stream().filter(p -> p.id().equals(id)).findFirst()
-                .orElseThrow(() -> new PersonNotFoundException(id));
+    private PersonRecord findPerson(String id) {
+        return repo.findPersonById(id).orElseThrow(() -> new PersonNotFoundException(id));
     }
 
     private LocalDate sprintStart() {
-        return LocalDate.now(clock).minusDays(CYCLE_DAY - 1);
+        return LocalDate.now(clock).minusDays(repo.findCurrentSprint().day() - 1);
     }
 
     /** Index (0-based) of the week that contains today. */
@@ -425,20 +400,21 @@ public class SprintsService {
         return (int) Math.max(0, Math.min(WEEK_COUNT - 1, days / 7));
     }
 
-    private static boolean active(Alloc a, int week) {
+    private static boolean active(AllocationRecord a, int week) {
         return week >= a.startWeek() && week < a.startWeek() + a.weeks();
     }
 
     private int hoursOf(String personId, int week) {
-        return allocs.stream()
-                .filter(a -> a.personId().equals(personId) && active(a, week))
-                .mapToInt(Alloc::hoursPerWeek)
+        return repo.findAllocationsByPersonId(personId).stream()
+                .filter(a -> active(a, week))
+                .mapToInt(AllocationRecord::hoursPerWeek)
                 .sum();
     }
 
     private SprintInfo sprint() {
-        return new SprintInfo(SPRINT_NAME, CYCLE_DAY, CYCLE_LENGTH,
-                (int) Math.round(CYCLE_DAY * 100.0 / CYCLE_LENGTH));
+        SprintRecord s = repo.findCurrentSprint();
+        return new SprintInfo(s.name(), s.day(), s.length(),
+                (int) Math.round(s.day() * 100.0 / s.length()));
     }
 
     private List<Week> weeks() {
@@ -460,14 +436,13 @@ public class SprintsService {
         return from.format(DAY_FORMAT) + " – " + to.format(DAY_FORMAT);
     }
 
-    private PersonRow row(Person p, int cur) {
+    private PersonRow row(PersonRecord p, int cur) {
         int hours = hoursOf(p.id(), cur);
         int free = Math.max(0, CAPACITY - hours);
         String status = statusOf(hours);
 
-        List<AllocationDto> bars = allocs.stream()
-                .filter(a -> a.personId().equals(p.id()))
-                .sorted(Comparator.comparingInt(Alloc::startWeek))
+        List<AllocationDto> bars = repo.findAllocationsByPersonId(p.id()).stream()
+                .sorted(Comparator.comparingInt(AllocationRecord::startWeek))
                 .map(a -> new AllocationDto(
                         a.id(), a.title(),
                         a.detail() == null ? a.hoursPerWeek() + "h/wk" : a.detail() + " · " + a.hoursPerWeek() + "h/wk",
@@ -547,7 +522,7 @@ public class SprintsService {
     private TimezoneOverlap timezones(List<PersonRow> everyone) {
         Map<String, Double> offsets = new LinkedHashMap<>();
         Map<String, Integer> hours = new LinkedHashMap<>();
-        for (Person p : PEOPLE) {
+        for (PersonRecord p : repo.findAllPeople()) {
             offsets.putIfAbsent(p.zone(), p.utcOffset());
             int h = everyone.stream().filter(r -> r.id().equals(p.id())).mapToInt(PersonRow::hours).sum();
             hours.merge(p.zone(), h, Integer::sum);

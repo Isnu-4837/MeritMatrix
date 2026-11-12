@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import com.example.demo.repository.TeamRepository;
+import com.example.demo.repository.TeamRepository.MemberRecord;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -14,13 +16,10 @@ import java.util.stream.Collectors;
 /**
  * Business logic behind TeamPage.jsx.
  *
- * Owns the team directory, the filter chips and their rules, the overview stats,
- * the squad, credential checks, sandbox reports, the audit export and the
+ * Reads the team directory, audit times and the squad from
+ * {@link TeamRepository}. Owns the filter chips and their rules, the overview
+ * stats, credential checks, sandbox reports, the audit export and the
  * skill-based matching. TeamController only handles HTTP and delegates here.
- *
- * Data is held in memory so the class runs on its own. To go live, replace the
- * member list with a repository (and the squad with a per-user table) and keep
- * the rules and derived values here.
  *
  * Requires Spring Boot 3.x and Java 17+.
  */
@@ -147,7 +146,7 @@ public class TeamService {
     }
 
     /* ======================================================================
-       Constants and sample data
+       Constants (rules and filter values)
        ====================================================================== */
 
     private static final List<String> SORTS = List.of("default", "score-desc", "name");
@@ -175,54 +174,16 @@ public class TeamService {
                     m -> m.availabilityScore() >= HIGH_AVAILABILITY),
             new Filter("bench", "On bench", null, null, "bg-secondary-container", TeamService::isBench));
 
-    private static final List<Member> MEMBERS = List.of(
-            new Member("elena", "Elena Vance", "Lead Architect", null, true, 96, "leading",
-                    "Leading · top 5% of audits",
-                    List.of("Rust", "Go", "gRPC", "Redis", "Kubernetes", "Zero-Trust", "Terraform"),
-                    List.of(
-                            new Badge("Rust Core Contributor", "memory", "text-tertiary", true,
-                                    "Merged 40+ commits to the verified Rust runtime repository, checked against signed commit history."),
-                            new Badge("Cloud Security Architect", "shield", "text-primary", true,
-                                    "Passed the zero-trust design review in a proctored sandbox."))),
-            new Member("alex", "Alex Rivera", "Staff Backend Engineer", null, true, 92, "optimal",
-                    "Optimal · passed all checks",
-                    List.of("Go", "gRPC", "Redis", "PostgreSQL", "Kafka", "WebSockets"),
-                    List.of(
-                            new Badge("Go Concurrency Expert", "bolt", "text-secondary", true,
-                                    "Completed the timed concurrency challenge with zero race conditions."))),
-            new Member("marcus", "Marcus Chen", "Senior Frontend Engineer", null, true, 88, "optimal",
-                    "Optimal · audit due in 6 days",
-                    List.of("Next.js", "WebSockets", "Tailwind", "TypeScript", "Three.js", "GLSL"),
-                    List.of(
-                            new Badge("WebGL Shader Pro", "deployed_code", "text-secondary", true,
-                                    "Shader pipeline reproduced from scratch in a sandbox at 120 FPS."))),
-            new Member("sophia", "Sophia Patel", "AI / ML Engineer", null, true, 97, "bench",
-                    "On bench · 16h free this week",
-                    List.of("Python", "CUDA", "PyTorch", "Rust", "Redis", "Triton"),
-                    List.of(
-                            new Badge("CUDA Kernel Optimizer", "memory", "text-tertiary", true,
-                                    "Kernel benchmark beat the reference implementation by 18% on the audit GPU."),
-                            new Badge("AWS ML Specialty", "cloud_done", "text-primary", true,
-                                    "Certification confirmed with the issuing body."))),
-            new Member("david", "David Kim", "DevOps / Cloud Engineer", null, true, 90, "optimal",
-                    "Optimal · passed all checks",
-                    List.of("Kubernetes", "Terraform", "Go", "AWS", "Prometheus", "Redis"),
-                    List.of(
-                            new Badge("AWS DevOps Professional", "cloud_done", "text-primary", true,
-                                    "Certification confirmed with the issuing body."),
-                            new Badge("Cloud Cost Optimizer", "savings", "text-secondary", false, null))),
-            new Member("priya", "Priya Nair", "Contract Data Engineer", null, false, 81, "bench",
-                    "Bench · available now",
-                    List.of("Python", "Spark", "Kafka", "SQL", "Airflow"),
-                    List.of(
-                            new Badge("Data Pipeline Certified", "database", "text-primary", false, null))));
+    /* ======================================================================
+       Dependencies
+       ====================================================================== */
 
-    /** When each member's sandbox was last audited, in hours before now. */
-    private static final Map<String, Integer> AUDIT_HOURS_AGO = Map.of(
-            "elena", 6, "alex", 30, "marcus", 52, "sophia", 12, "david", 75, "priya", 200);
-
+    private final TeamRepository repo;
     private final Clock clock = Clock.systemUTC();
-    private final Set<String> squad = Collections.synchronizedSet(new LinkedHashSet<>());
+
+    public TeamService(TeamRepository repo) {
+        this.repo = repo;
+    }
 
     /* ======================================================================
        Public API
@@ -246,7 +207,8 @@ public class TeamService {
 
         String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
 
-        List<Member> searched = MEMBERS.stream().filter(m -> matchesQuery(m, needle)).toList();
+        List<Member> all = members();
+        List<Member> searched = all.stream().filter(m -> matchesQuery(m, needle)).toList();
 
         List<FilterChip> chips = FILTERS.stream()
                 .map(f -> new FilterChip(f.id(), f.label(), f.icon(), f.iconColor(), f.dot(),
@@ -260,7 +222,7 @@ public class TeamService {
         };
         List<Member> visible = searched.stream().filter(rule.test()).sorted(order).toList();
 
-        return new TeamResponse(overview(MEMBERS), chips, visible.size(), MEMBERS.size(),
+        return new TeamResponse(overview(all), chips, visible.size(), all.size(),
                 sections(visible, grouped), squadIds(), copilot());
     }
 
@@ -315,7 +277,7 @@ public class TeamService {
         }
         Set<String> wantedLower = required.stream().map(s -> s.toLowerCase(Locale.ROOT)).collect(Collectors.toSet());
 
-        List<MatchCandidate> ranked = MEMBERS.stream()
+        List<MatchCandidate> ranked = members().stream()
                 .filter(m -> !Boolean.TRUE.equals(benchOnly) || isBench(m))
                 .map(m -> {
                     List<String> matched = m.skills().stream()
@@ -340,13 +302,14 @@ public class TeamService {
 
     /** "Export audit report". */
     public AuditReport auditReport() {
-        List<AuditEntry> entries = MEMBERS.stream()
+        List<Member> all = members();
+        List<AuditEntry> entries = all.stream()
                 .map(m -> new AuditEntry(m.id(), m.name(), m.role(), statusKey(m), m.availabilityScore(),
                         m.verified(),
                         (int) m.meritBadges().stream().filter(Badge::hasCheck).count(),
                         m.meritBadges().size(), lastAudit(m)))
                 .toList();
-        return new AuditReport(Instant.now(clock), overview(MEMBERS), entries);
+        return new AuditReport(Instant.now(clock), overview(all), entries);
     }
 
     /* ---------------- Squad ---------------- */
@@ -358,32 +321,49 @@ public class TeamService {
     /** Adding someone already in the squad changes nothing. */
     public SquadState addToSquad(String memberId) {
         Member m = find(memberId);
-        squad.add(m.id());
+        repo.addToSquad(m.id());
         return squadState(m.name() + " added to your squad.");
     }
 
     public SquadState removeFromSquad(String memberId) {
         Member m = find(memberId);
-        squad.remove(m.id());
+        repo.removeFromSquad(m.id());
         return squadState(m.name() + " removed from your squad.");
     }
 
     public SquadState clearSquad() {
-        squad.clear();
+        repo.clearSquad();
         return squadState("Squad cleared.");
+    }
+
+    /* ======================================================================
+       Mapping (repository records -> response types)
+       ====================================================================== */
+
+    private static Member toMember(MemberRecord r) {
+        List<Badge> badges = r.meritBadges().stream()
+                .map(b -> new Badge(b.title(), b.icon(), b.iconColor(), b.hasCheck(), b.verificationDetail()))
+                .toList();
+        return new Member(r.id(), r.name(), r.role(), r.avatar(), r.verified(), r.availabilityScore(),
+                r.statusType(), r.statusText(), r.skills(), badges);
     }
 
     /* ======================================================================
        Derived values
        ====================================================================== */
 
+    private List<Member> members() {
+        return repo.findAllMembers().stream().map(TeamService::toMember).toList();
+    }
+
     private Member find(String id) {
-        return MEMBERS.stream().filter(m -> m.id().equals(id)).findFirst()
+        return repo.findMemberById(id)
+                .map(TeamService::toMember)
                 .orElseThrow(() -> new MemberNotFoundException(id));
     }
 
     private Instant lastAudit(Member m) {
-        return Instant.now(clock).minus(AUDIT_HOURS_AGO.getOrDefault(m.id(), 0), ChronoUnit.HOURS);
+        return Instant.now(clock).minus(repo.findAuditHoursAgo(m.id()), ChronoUnit.HOURS);
     }
 
     private static boolean hasSkill(Member m, List<String> list) {
@@ -436,14 +416,12 @@ public class TeamService {
     }
 
     private List<String> squadIds() {
-        synchronized (squad) {
-            return List.copyOf(squad);
-        }
+        return repo.findSquadIds();
     }
 
     private List<Member> squadMembers() {
         List<String> ids = squadIds();
-        return MEMBERS.stream().filter(m -> ids.contains(m.id())).toList();
+        return members().stream().filter(m -> ids.contains(m.id())).toList();
     }
 
     private Copilot copilot() {

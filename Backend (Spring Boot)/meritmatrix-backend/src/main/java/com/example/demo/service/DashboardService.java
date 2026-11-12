@@ -1,5 +1,11 @@
 package com.example.demo.service;
 
+import com.example.demo.repository.DashboardRepository;
+import com.example.demo.repository.DashboardRepository.AiUsage;
+import com.example.demo.repository.DashboardRepository.BurndownData;
+import com.example.demo.repository.DashboardRepository.ProjectRecord;
+import com.example.demo.repository.DashboardRepository.SprintInfo;
+import com.example.demo.repository.DashboardRepository.TeamLoadRecord;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -8,19 +14,14 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 /**
  * Business logic behind DashboardPage.jsx.
  *
- * Owns the project store, the dashboard metrics, the burndown, the team
- * workload and the sprint-plan draft. DashboardController only handles HTTP
- * and delegates here.
- *
- * Data is held in memory so the class runs on its own. To go live, replace
- * the project store with a repository and the constants with queries, and keep
- * the derived values (percentages, deltas, insight text) computed here.
+ * Reads raw data from {@link DashboardRepository} and computes everything
+ * derived from it (progress percentages, deltas, insight text, filtering,
+ * searching, sorting). DashboardController only handles HTTP and delegates here.
  *
  * Requires Spring Boot 3.x and Java 17+.
  */
@@ -46,14 +47,7 @@ public class DashboardService {
             int totalTasks,
             String dueDate,
             @JsonProperty("isUrgent") boolean isUrgent,
-            List<Assignee> assignees) {
-
-        Project withTasks(int completed, int total) {
-            int pct = total == 0 ? 0 : Math.round(completed * 100f / total);
-            return new Project(id, code, title, description, status, statusColor, accentGradient,
-                    pct, completed, total, dueDate, isUrgent, assignees);
-        }
-    }
+            List<Assignee> assignees) {}
 
     public record Badge(String kind, String text) {}
 
@@ -109,69 +103,22 @@ public class DashboardService {
     }
 
     /* ======================================================================
-       Constants and sample data
+       Constants
        ====================================================================== */
-
-    private static final int SPRINT_NUMBER = 14;
-    private static final int SPRINT_DAY = 9;
-    private static final int SPRINT_LENGTH = 14;
-    private static final int SPRINT_ON_SCHEDULE_PERCENT = 84; // sample figure, no source to derive it from yet
-    private static final int WEEKLY_CAPACITY = 40;
-
-    private static final List<Integer> ACTIVE_PROJECT_HISTORY = List.of(3, 4, 4, 5, 5);
-    private static final List<Double> VELOCITY_HISTORY = List.of(71.0, 76.0, 80.0, 84.0, 88.0, 94.2);
-    private static final double VELOCITY_TARGET = 100.0;
-    private static final List<Double> AI_HOURS_SAVED_HISTORY = List.of(8.0, 14.0, 19.0, 24.0, 29.0, 34.0);
-    private static final int AI_PROGRESS_PERCENT = 86;
-    private static final int NEURAL_ACTIONS = 1280;
-
-    private static final int BURNDOWN_TOTAL = 120;
-    private static final List<Integer> BURNDOWN_ACTUAL =
-            List.of(120, 114, 106, 98, 90, 81, 72, 63, 53, 42); // points left, day 0 to today
-
-    private static final List<TeamLoad> TEAM_LOAD = List.of(
-            new TeamLoad("Alex Rivera", 40), new TeamLoad("Elena Vance", 32),
-            new TeamLoad("Marcus Chen", 56), new TeamLoad("Sophia Patel", 25),
-            new TeamLoad("David Kim", 36));
 
     private static final List<String> FILTERS = List.of("all", "in_progress", "review");
     private static final List<String> SORTS = List.of("default", "progress", "name");
     private static final DateTimeFormatter DUE_FORMAT = DateTimeFormatter.ofPattern("MMM dd", Locale.US);
 
-    private static final Assignee ALEX = new Assignee("Alex Rivera", "AR", "bg-primary-container text-on-primary-container");
-    private static final Assignee ELENA = new Assignee("Elena Vance", "EV", "bg-secondary-container text-on-secondary-container");
-    private static final Assignee MARCUS = new Assignee("Marcus Chen", "MC", "bg-tertiary-container text-on-tertiary-container");
-    private static final Assignee SOPHIA = new Assignee("Sophia Patel", "SP", "bg-surface-container-highest text-on-surface");
-    private static final Assignee DAVID = new Assignee("David Kim", "DK", "bg-primary text-on-primary");
+    /* ======================================================================
+       Dependencies
+       ====================================================================== */
 
-    private final List<Project> projects = Collections.synchronizedList(new ArrayList<>(List.of(
-            new Project("p1", "PRJ-101", "Realtime Multi-Agent Orchestrator",
-                    "Core engine phase 2: event bus, agent scheduling and state replication.",
-                    "In Progress", "bg-primary/20 text-primary", "from-primary to-secondary",
-                    68, 17, 25, "Oct 22", false, List.of(ALEX, ELENA)),
-            new Project("p2", "PRJ-102", "Kinetic UI Token Library",
-                    "Shader synthesis and design tokens shared across client surfaces.",
-                    "In Progress", "bg-primary/20 text-primary", "from-tertiary to-primary",
-                    54, 13, 24, "Oct 20", true, List.of(MARCUS)),
-            new Project("p3", "PRJ-103", "Zero-Trust Access Control",
-                    "Neural boundary gateway with cryptographic session verification.",
-                    "QA Review", "bg-secondary/20 text-secondary", "from-secondary to-primary",
-                    91, 29, 32, "Oct 18", true, List.of(ELENA, DAVID)),
-            new Project("p4", "PRJ-104", "Hyperion Client Portal",
-                    "Customer-facing dashboards, billing views and onboarding.",
-                    "Review Required", "bg-error/20 text-error", "from-error to-tertiary",
-                    76, 19, 25, "Oct 25", false, List.of(MARCUS, SOPHIA)),
-            new Project("p5", "PRJ-105", "Global Kubernetes Mesh",
-                    "TPU cluster expansion and infrastructure hardening.",
-                    "Ready for Staging", "bg-tertiary/20 text-tertiary", "from-primary to-tertiary",
-                    88, 22, 25, "Nov 02", false, List.of(DAVID, ALEX)),
-            new Project("p6", "PRJ-106", "Neural Prompt Evaluation Pipeline",
-                    "Benchmark harness for comparing engine versions.",
-                    "Planning", "bg-outline/20 text-on-surface-variant", "from-secondary to-tertiary",
-                    12, 3, 26, "Nov 14", false, List.of(SOPHIA))
-    )));
+    private final DashboardRepository repo;
 
-    private final AtomicInteger idSeq = new AtomicInteger(7);
+    public DashboardService(DashboardRepository repo) {
+        this.repo = repo;
+    }
 
     /* ======================================================================
        Public API
@@ -179,12 +126,13 @@ public class DashboardService {
 
     /** Everything the dashboard renders, in one call. */
     public DashboardResponse dashboard(String userName) {
+        SprintInfo sprint = repo.findCurrentSprint();
         List<Project> snapshot = snapshot();
         return new DashboardResponse(
                 userName,
-                SPRINT_NUMBER, SPRINT_DAY, SPRINT_LENGTH, SPRINT_ON_SCHEDULE_PERCENT,
-                metrics(snapshot),
-                burndown(),
+                sprint.number(), sprint.day(), sprint.length(), sprint.onSchedulePercent(),
+                metrics(snapshot, sprint),
+                burndown(sprint),
                 workload(),
                 statusBreakdown(snapshot),
                 snapshot);
@@ -217,34 +165,29 @@ public class DashboardService {
     }
 
     public Project getProject(String id) {
-        return snapshot().stream()
-                .filter(p -> p.id().equals(id))
-                .findFirst()
+        return repo.findProjectById(id)
+                .map(DashboardService::toProject)
                 .orElseThrow(() -> new ProjectNotFoundException(id));
     }
 
     /** "New project": starts in Planning with no tasks and no assignees. */
     public Project createProject(String title, String description, LocalDate dueDate) {
-        int n = idSeq.getAndIncrement();
-        Project created = new Project(
+        int n = repo.nextProjectNumber();
+        ProjectRecord created = new ProjectRecord(
                 "p" + n, "PRJ-" + (100 + n), title.trim(),
                 description == null || description.isBlank() ? "No description yet." : description.trim(),
                 "Planning", "bg-outline/20 text-on-surface-variant", "from-primary to-secondary",
-                0, 0, 0,
+                0, 0,
                 dueDate == null ? "TBD" : dueDate.format(DUE_FORMAT),
                 false, List.of());
-        projects.add(created);
-        return created;
+        return toProject(repo.saveProject(created));
     }
 
     /** "Quick Task": adds one open task and recalculates the project's progress. */
     public Project addQuickTask(String projectId) {
-        synchronized (projects) {
-            Project current = getProject(projectId);
-            Project updated = current.withTasks(current.completedTasks(), current.totalTasks() + 1);
-            projects.set(projects.indexOf(current), updated);
-            return updated;
-        }
+        return repo.addOpenTask(projectId)
+                .map(DashboardService::toProject)
+                .orElseThrow(() -> new ProjectNotFoundException(projectId));
     }
 
     /**
@@ -260,7 +203,25 @@ public class DashboardService {
                 .map(p -> new SprintPlanItem(p.id(), p.title(),
                         "Close " + (p.totalTasks() - p.completedTasks()) + " open task(s)"))
                 .toList();
-        return new SprintPlan(cleanGoal, SPRINT_NUMBER + 1, items);
+        return new SprintPlan(cleanGoal, repo.findCurrentSprint().number() + 1, items);
+    }
+
+    /* ======================================================================
+       Mapping (repository records -> response types)
+       ====================================================================== */
+
+    private static Project toProject(ProjectRecord r) {
+        int pct = r.totalTasks() == 0 ? 0 : Math.round(r.completedTasks() * 100f / r.totalTasks());
+        List<Assignee> assignees = r.assignees().stream()
+                .map(a -> new Assignee(a.name(), a.initials(), a.color()))
+                .toList();
+        return new Project(r.id(), r.code(), r.title(), r.description(), r.status(),
+                r.statusColor(), r.accentGradient(), pct, r.completedTasks(), r.totalTasks(),
+                r.dueDate(), r.urgent(), assignees);
+    }
+
+    private static TeamLoad toTeamLoad(TeamLoadRecord t) {
+        return new TeamLoad(t.name(), t.hours());
     }
 
     /* ======================================================================
@@ -268,9 +229,7 @@ public class DashboardService {
        ====================================================================== */
 
     private List<Project> snapshot() {
-        synchronized (projects) {
-            return List.copyOf(projects);
-        }
+        return repo.findAllProjects().stream().map(DashboardService::toProject).toList();
     }
 
     private static boolean matchesFilter(Project p, String filter) {
@@ -289,19 +248,20 @@ public class DashboardService {
                 .anyMatch(s -> s.toLowerCase(Locale.ROOT).contains(needle));
     }
 
-    private List<Metric> metrics(List<Project> list) {
-        return List.of(activeProjectsMetric(list), velocityMetric(), aiMetric());
+    private List<Metric> metrics(List<Project> list, SprintInfo sprint) {
+        return List.of(activeProjectsMetric(list), velocityMetric(sprint), aiMetric());
     }
 
-    private static Metric activeProjectsMetric(List<Project> list) {
+    private Metric activeProjectsMetric(List<Project> list) {
+        List<Integer> history = repo.findActiveProjectHistory();
         int current = list.size();
-        int previous = ACTIVE_PROJECT_HISTORY.get(ACTIVE_PROJECT_HISTORY.size() - 1);
+        int previous = history.get(history.size() - 1);
         int trend = previous == 0 ? 0 : Math.round((current - previous) * 100f / previous);
         int urgent = (int) list.stream().filter(Project::isUrgent).count();
         int onTrackPercent = current == 0 ? 100 : Math.round((current - urgent) * 100f / current);
 
         List<Double> spark = new ArrayList<>();
-        ACTIVE_PROJECT_HISTORY.forEach(v -> spark.add(v.doubleValue()));
+        history.forEach(v -> spark.add(v.doubleValue()));
         spark.add((double) current);
 
         return new Metric("projects", "Active Projects", "folder", "text-primary",
@@ -312,53 +272,62 @@ public class DashboardService {
                 onTrackPercent, spark);
     }
 
-    private static Metric velocityMetric() {
-        double current = VELOCITY_HISTORY.get(VELOCITY_HISTORY.size() - 1);
-        double previous = VELOCITY_HISTORY.get(VELOCITY_HISTORY.size() - 2);
+    private Metric velocityMetric(SprintInfo sprint) {
+        List<Double> history = repo.findVelocityHistory();
+        double current = history.get(history.size() - 1);
+        double previous = history.get(history.size() - 2);
         double delta = Math.round((current - previous) * 10) / 10.0;
 
-        int booked = TEAM_LOAD.stream().mapToInt(TeamLoad::hours).sum();
-        int available = TEAM_LOAD.size() * WEEKLY_CAPACITY;
+        List<TeamLoadRecord> team = repo.findTeamLoad();
+        int booked = team.stream().mapToInt(TeamLoadRecord::hours).sum();
+        int available = team.size() * repo.findWeeklyCapacityHours();
         int capacityPercent = available == 0 ? 0 : Math.round(booked * 100f / available);
 
         return new Metric("velocity", "Sprint Velocity", "bolt", "text-secondary",
                 current, 1, "pts",
                 new Badge("delta", String.format(Locale.US, "%+.1f delta", delta)),
                 capacityPercent + "% team capacity",
-                "T-" + (SPRINT_LENGTH - SPRINT_DAY - 1) + " days remaining",
-                (int) Math.min(100, Math.round(current * 100 / VELOCITY_TARGET)),
-                VELOCITY_HISTORY);
+                "T-" + (sprint.length() - sprint.day() - 1) + " days remaining",
+                (int) Math.min(100, Math.round(current * 100 / repo.findVelocityTarget())),
+                history);
     }
 
-    private static Metric aiMetric() {
-        double hoursSaved = AI_HOURS_SAVED_HISTORY.get(AI_HOURS_SAVED_HISTORY.size() - 1);
+    private Metric aiMetric() {
+        AiUsage ai = repo.findAiUsage();
+        List<Double> history = ai.hoursSavedHistory();
+        double hoursSaved = history.get(history.size() - 1);
         return new Metric("ai", "AI Automation", "auto_awesome", "text-tertiary",
                 hoursSaved, 0, "hrs", new Badge("pill", "Saved"),
-                String.format(Locale.US, "%,d neural actions run", NEURAL_ACTIONS), "Neural v3.4",
-                AI_PROGRESS_PERCENT, AI_HOURS_SAVED_HISTORY);
+                String.format(Locale.US, "%,d neural actions run", ai.neuralActions()), "Neural v3.4",
+                ai.progressPercent(), history);
     }
 
     /** Ahead of schedule means fewer points are left today than the ideal line allows. */
-    private static Burndown burndown() {
-        double idealToday = BURNDOWN_TOTAL - (double) BURNDOWN_TOTAL * SPRINT_DAY / SPRINT_LENGTH;
-        int last = BURNDOWN_ACTUAL.get(BURNDOWN_ACTUAL.size() - 1);
+    private Burndown burndown(SprintInfo sprint) {
+        BurndownData data = repo.findBurndown();
+        double idealToday = data.totalPoints()
+                - (double) data.totalPoints() * sprint.day() / sprint.length();
+        int last = data.actual().get(data.actual().size() - 1);
         double ahead = idealToday - last;
-        return new Burndown(BURNDOWN_TOTAL, SPRINT_LENGTH, SPRINT_DAY, BURNDOWN_ACTUAL,
+        return new Burndown(data.totalPoints(), sprint.length(), sprint.day(), data.actual(),
                 ahead >= 0, Math.round(Math.abs(ahead) * 10) / 10.0);
     }
 
-    private static Workload workload() {
-        int over = (int) TEAM_LOAD.stream().filter(m -> m.hours() > WEEKLY_CAPACITY).count();
+    private Workload workload() {
+        int capacity = repo.findWeeklyCapacityHours();
+        List<TeamLoad> team = repo.findTeamLoad().stream().map(DashboardService::toTeamLoad).toList();
 
-        TeamLoad busiest = TEAM_LOAD.stream().max(Comparator.comparingInt(TeamLoad::hours)).orElse(null);
-        TeamLoad freest = TEAM_LOAD.stream().min(Comparator.comparingInt(TeamLoad::hours)).orElse(null);
+        int over = (int) team.stream().filter(m -> m.hours() > capacity).count();
+
+        TeamLoad busiest = team.stream().max(Comparator.comparingInt(TeamLoad::hours)).orElse(null);
+        TeamLoad freest = team.stream().min(Comparator.comparingInt(TeamLoad::hours)).orElse(null);
 
         String insight = null;
-        if (busiest != null && freest != null && busiest.hours() > WEEKLY_CAPACITY) {
-            insight = busiest.name() + " is " + (busiest.hours() - WEEKLY_CAPACITY) + "h over. "
-                    + freest.name() + " has " + (WEEKLY_CAPACITY - freest.hours()) + "h free.";
+        if (busiest != null && freest != null && busiest.hours() > capacity) {
+            insight = busiest.name() + " is " + (busiest.hours() - capacity) + "h over. "
+                    + freest.name() + " has " + (capacity - freest.hours()) + "h free.";
         }
-        return new Workload(WEEKLY_CAPACITY, TEAM_LOAD, over, insight);
+        return new Workload(capacity, team, over, insight);
     }
 
     /** Groups for the donut: in progress, in review, planning, other (empty groups are dropped). */
