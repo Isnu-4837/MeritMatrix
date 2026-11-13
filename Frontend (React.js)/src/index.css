@@ -6,64 +6,66 @@
   --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* ── Dark palette (default) ── */
-  --color-surface:                    #0d1117;
-  --color-surface-dim:                #0d1117;
-  --color-surface-bright:             #313742;
-  --color-surface-container-lowest:   #080c12;
-  --color-surface-container-low:      #151b26;
-  --color-surface-container:          #1a2030;
-  --color-surface-container-high:     #232a38;
-  --color-surface-container-highest:  #2e3544;
-  --color-on-surface:                 #e2e6f4;
-  --color-on-surface-variant:         #b0b8cc;
-  --color-inverse-surface:            #e2e6f4;
-  --color-inverse-on-surface:         #2a3040;
-  --color-outline:                    #7a84a0;
-  --color-outline-variant:            #3a4258;
-  --color-surface-tint:               #818cf8;
-  --color-surface-variant:            #2e3544;
+  /* ── Dark palette (default) — Black · Dark Red · Blue ── */
 
-  /* Primary – indigo/violet */
-  --color-primary:                    #818cf8;
-  --color-on-primary:                 #1a0080;
-  --color-primary-container:          #6366f1;
-  --color-on-primary-container:       #ffffff;
-  --color-inverse-primary:            #4f46e5;
-  --color-primary-fixed:              #e0e7ff;
-  --color-primary-fixed-dim:          #818cf8;
-  --color-on-primary-fixed:           #1e1b4b;
-  --color-on-primary-fixed-variant:   #3730a3;
+  /* Surfaces: true black base with very subtle warm-dark tones */
+  --color-surface:                    #080808;
+  --color-surface-dim:                #050505;
+  --color-surface-bright:             #1c1c1c;
+  --color-surface-container-lowest:   #000000;
+  --color-surface-container-low:      #0e0e0e;
+  --color-surface-container:          #141414;
+  --color-surface-container-high:     #1a1a1a;
+  --color-surface-container-highest:  #242424;
+  --color-on-surface:                 #f0eded;
+  --color-on-surface-variant:         #b8b0b0;
+  --color-inverse-surface:            #f0eded;
+  --color-inverse-on-surface:         #1a1212;
+  --color-outline:                    #6b6060;
+  --color-outline-variant:            #2e2424;
+  --color-surface-tint:               #e02d2d;
+  --color-surface-variant:            #1f1515;
 
-  /* Secondary – cyan */
-  --color-secondary:                  #22d3ee;
-  --color-on-secondary:               #003640;
-  --color-secondary-container:        #06b6d4;
-  --color-on-secondary-container:     #00424e;
-  --color-secondary-fixed:            #cffafe;
-  --color-secondary-fixed-dim:        #22d3ee;
-  --color-on-secondary-fixed:         #001f26;
-  --color-on-secondary-fixed-variant: #0891b2;
+  /* Primary – Dark Red / Crimson */
+  --color-primary:                    #e03535;
+  --color-on-primary:                 #ffffff;
+  --color-primary-container:          #c01f1f;
+  --color-on-primary-container:       #ffe8e8;
+  --color-inverse-primary:            #9b1515;
+  --color-primary-fixed:              #ffe4e4;
+  --color-primary-fixed-dim:          #e03535;
+  --color-on-primary-fixed:           #3b0000;
+  --color-on-primary-fixed-variant:   #7f1111;
 
-  /* Tertiary – violet */
-  --color-tertiary:                   #c084fc;
-  --color-on-tertiary:                #3b0080;
-  --color-tertiary-container:         #a855f7;
-  --color-on-tertiary-container:      #2e0063;
-  --color-tertiary-fixed:             #f3e8ff;
-  --color-tertiary-fixed-dim:         #c084fc;
-  --color-on-tertiary-fixed:          #1e003d;
-  --color-on-tertiary-fixed-variant:  #7c3aed;
+  /* Secondary – Electric Blue / Steel Blue */
+  --color-secondary:                  #3b8bff;
+  --color-on-secondary:               #000d2b;
+  --color-secondary-container:        #1a5fd4;
+  --color-on-secondary-container:     #d6e8ff;
+  --color-secondary-fixed:            #dbeafe;
+  --color-secondary-fixed-dim:        #3b8bff;
+  --color-on-secondary-fixed:         #001233;
+  --color-on-secondary-fixed-variant: #1d4ed8;
 
-  /* Error */
-  --color-error:                      #fca5a5;
-  --color-on-error:                   #7f1d1d;
-  --color-error-container:            #991b1b;
-  --color-on-error-container:         #fee2e2;
+  /* Tertiary – Muted Rose (complement to dark red) */
+  --color-tertiary:                   #f472b6;
+  --color-on-tertiary:                #3b0022;
+  --color-tertiary-container:         #be185d;
+  --color-on-tertiary-container:      #ffe4f0;
+  --color-tertiary-fixed:             #fce7f3;
+  --color-tertiary-fixed-dim:         #f472b6;
+  --color-on-tertiary-fixed:          #2d0019;
+  --color-on-tertiary-fixed-variant:  #9d174d;
+
+  /* Error — a brighter red so it differs from primary */
+  --color-error:                      #ff6b6b;
+  --color-on-error:                   #3b0000;
+  --color-error-container:            #7a1515;
+  --color-on-error-container:         #ffdede;
 
   /* Background */
-  --color-background:                 #0d1117;
-  --color-on-background:              #e2e6f4;
+  --color-background:                 #080808;
+  --color-on-background:              #f0eded;
 
   /* ── Spacing ── */
   --spacing-gutter:    1.5rem;
@@ -127,6 +129,24 @@ html:not(.dark) {
   --color-on-background:              #0f172a;
 }
 
+/* ── Dark mode shell overrides ── */
+html.dark body {
+  background-color: #080808 !important;
+  color: #f0eded !important;
+}
+
+html.dark aside {
+  background-color: rgba(10, 10, 10, 0.97) !important;
+  border-right: 1px solid rgba(224, 53, 53, 0.14) !important;
+}
+
+html.dark header {
+  background-color: rgba(8, 8, 8, 0.94) !important;
+  border-bottom: 1px solid rgba(46, 36, 36, 0.9) !important;
+  backdrop-filter: blur(16px);
+}
+
+/* ── Light mode shell overrides ── */
 html:not(.dark) body {
   background-color: #f8fafc !important;
   color: #0f172a !important;
@@ -211,8 +231,8 @@ code, kbd, samp, pre {
 ══════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar         { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track   { background: transparent; }
-::-webkit-scrollbar-thumb   { background: rgba(122,132,160,0.22); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(122,132,160,0.42); }
+::-webkit-scrollbar-thumb   { background: rgba(224, 53, 53, 0.25); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(224, 53, 53, 0.50); }
 
 /* ══════════════════════════════════════════════════════════
    Material Symbols
@@ -255,7 +275,7 @@ code, kbd, samp, pre {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(99,102,241,.12), transparent 65%);
+  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(224,53,53,.13), transparent 65%);
   opacity: 0;
   transition: opacity 0.3s;
 }
