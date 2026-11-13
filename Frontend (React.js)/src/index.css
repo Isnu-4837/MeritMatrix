@@ -6,56 +6,54 @@
   --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* ── Dark palette (default) — Black · Dark Red · Blue ── */
-
-  /* Surfaces: true black base with very subtle warm-dark tones */
-  --color-surface:                    #080808;
-  --color-surface-dim:                #050505;
-  --color-surface-bright:             #1c1c1c;
+  /* ── Dark palette (default): dark black · dark red · aqua blue ── */
+  --color-surface:                    #030304;
+  --color-surface-dim:                #030304;
+  --color-surface-bright:             #25252b;
   --color-surface-container-lowest:   #000000;
-  --color-surface-container-low:      #0e0e0e;
-  --color-surface-container:          #141414;
-  --color-surface-container-high:     #1a1a1a;
-  --color-surface-container-highest:  #242424;
-  --color-on-surface:                 #f0eded;
-  --color-on-surface-variant:         #b8b0b0;
-  --color-inverse-surface:            #f0eded;
-  --color-inverse-on-surface:         #1a1212;
-  --color-outline:                    #6b6060;
-  --color-outline-variant:            #2e2424;
-  --color-surface-tint:               #e02d2d;
-  --color-surface-variant:            #1f1515;
+  --color-surface-container-low:      #08080a;
+  --color-surface-container:          #0e0e11;
+  --color-surface-container-high:     #151519;
+  --color-surface-container-highest:  #1e1e23;
+  --color-on-surface:                 #f2f2f4;
+  --color-on-surface-variant:         #b4b4be;
+  --color-inverse-surface:            #f2f2f4;
+  --color-inverse-on-surface:         #1a1a1f;
+  --color-outline:                    #7a7a86;
+  --color-outline-variant:            #26262c;
+  --color-surface-tint:               #dc2626;
+  --color-surface-variant:            #1e1e23;
 
-  /* Primary – Dark Red / Crimson */
-  --color-primary:                    #e03535;
+  /* Primary – dark red */
+  --color-primary:                    #dc2626;
   --color-on-primary:                 #ffffff;
-  --color-primary-container:          #c01f1f;
-  --color-on-primary-container:       #ffe8e8;
-  --color-inverse-primary:            #9b1515;
-  --color-primary-fixed:              #ffe4e4;
-  --color-primary-fixed-dim:          #e03535;
-  --color-on-primary-fixed:           #3b0000;
-  --color-on-primary-fixed-variant:   #7f1111;
+  --color-primary-container:          #991b1b;
+  --color-on-primary-container:       #ffffff;
+  --color-inverse-primary:            #b91c1c;
+  --color-primary-fixed:              #fee2e2;
+  --color-primary-fixed-dim:          #f87171;
+  --color-on-primary-fixed:           #450a0a;
+  --color-on-primary-fixed-variant:   #7f1d1d;
 
-  /* Secondary – Electric Blue / Steel Blue */
-  --color-secondary:                  #3b8bff;
-  --color-on-secondary:               #000d2b;
-  --color-secondary-container:        #1a5fd4;
-  --color-on-secondary-container:     #d6e8ff;
-  --color-secondary-fixed:            #dbeafe;
-  --color-secondary-fixed-dim:        #3b8bff;
-  --color-on-secondary-fixed:         #001233;
-  --color-on-secondary-fixed-variant: #1d4ed8;
+  /* Secondary – aqua blue */
+  --color-secondary:                  #2bd9ff;
+  --color-on-secondary:               #00323d;
+  --color-secondary-container:        #00b8e6;
+  --color-on-secondary-container:     #00212b;
+  --color-secondary-fixed:            #cdf4ff;
+  --color-secondary-fixed-dim:        #2bd9ff;
+  --color-on-secondary-fixed:         #00131a;
+  --color-on-secondary-fixed-variant: #007a99;
 
-  /* Tertiary – Muted Rose (complement to dark red) */
-  --color-tertiary:                   #f472b6;
-  --color-on-tertiary:                #3b0022;
-  --color-tertiary-container:         #be185d;
-  --color-on-tertiary-container:      #ffe4f0;
-  --color-tertiary-fixed:             #fce7f3;
-  --color-tertiary-fixed-dim:         #f472b6;
-  --color-on-tertiary-fixed:          #2d0019;
-  --color-on-tertiary-fixed-variant:  #9d174d;
+  /* Tertiary – light/deep shades of the same red (keeps the palette to three colours) */
+  --color-tertiary:                   #f87171;
+  --color-on-tertiary:                #450a0a;
+  --color-tertiary-container:         #b91c1c;
+  --color-on-tertiary-container:      #ffffff;
+  --color-tertiary-fixed:             #fee2e2;
+  --color-tertiary-fixed-dim:         #f87171;
+  --color-on-tertiary-fixed:          #450a0a;
+  --color-on-tertiary-fixed-variant:  #991b1b;
 
   /* Error — a brighter red so it differs from primary */
   --color-error:                      #ff6b6b;
@@ -64,8 +62,8 @@
   --color-on-error-container:         #ffdede;
 
   /* Background */
-  --color-background:                 #080808;
-  --color-on-background:              #f0eded;
+  --color-background:                 #030304;
+  --color-on-background:              #f2f2f4;
 
   /* ── Spacing ── */
   --spacing-gutter:    1.5rem;
@@ -74,6 +72,22 @@
   --spacing-space-md:  1rem;
   --spacing-space-lg:  1.5rem;
   --spacing-space-xl:  2.5rem;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Theme palettes (Settings > Appearance)
+   theme.js writes the chosen palette as inline variables on <html>,
+   which overrides the values in this file. It also sets two glow
+   colours (as "r, g, b") that the effects below read.
+══════════════════════════════════════════════════════════ */
+:root {
+  --glow-a: 220, 38, 38;
+  --glow-b: 43, 217, 255;
+}
+
+html:not(.dark) {
+  --glow-a: 99, 102, 241;
+  --glow-b: 2, 132, 199;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -269,46 +283,85 @@ code, kbd, samp, pre {
   text-transform: uppercase;
 }
 
-/* Spotlight glow on cards */
+/* Spotlight glow on cards (follows the palette's primary colour) */
 .spotlight-glow {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(224,53,53,.13), transparent 65%);
+  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 50%), rgba(var(--glow-a), .12), transparent 65%);
   opacity: 0;
   transition: opacity 0.3s;
 }
 .group:hover .spotlight-glow { opacity: 1; }
 
 /* ══════════════════════════════════════════════════════════
-   Micro-animations
+   Micro-animations  (enhanced)
 ══════════════════════════════════════════════════════════ */
-@keyframes fadeUp   { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
-@keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
-@keyframes scaleIn  { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:none; } }
-@keyframes floatA   { 0%,100%{transform:translate3d(0,0,0) scale(1);} 50%{transform:translate3d(22px,-16px,0) scale(1.06);} }
-@keyframes floatB   { 0%,100%{transform:translate3d(0,0,0) scale(1);} 50%{transform:translate3d(-18px,12px,0) scale(1.04);} }
-@keyframes shimmerMove { from{transform:translateX(-100%);} to{transform:translateX(100%);} }
-@keyframes pulseRing   { 0%{transform:scale(1);opacity:.6;} 100%{transform:scale(2.4);opacity:0;} }
+@keyframes fadeUp      { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:none; } }
+@keyframes fadeDown    { from { opacity:0; transform:translateY(-12px); } to { opacity:1; transform:none; } }
+@keyframes fadeIn      { from { opacity:0; } to { opacity:1; } }
+@keyframes scaleIn     { from { opacity:0; transform:scale(.93); } to { opacity:1; transform:none; } }
+@keyframes scaleInBig  { from { opacity:0; transform:scale(.85) translateY(8px); } to { opacity:1; transform:none; } }
+@keyframes floatA      { 0%,100%{transform:translate3d(0,0,0) scale(1);} 50%{transform:translate3d(26px,-20px,0) scale(1.08);} }
+@keyframes floatB      { 0%,100%{transform:translate3d(0,0,0) scale(1);} 50%{transform:translate3d(-20px,14px,0) scale(1.05);} }
+@keyframes floatC      { 0%,100%{transform:translate3d(0,0,0) scale(1);} 50%{transform:translate3d(14px,8px,0) scale(1.06);} }
+@keyframes shimmerMove { from{transform:translateX(-120%) skewX(-10deg);} to{transform:translateX(220%) skewX(-10deg);} }
+@keyframes shimmerSlow { from{transform:translateX(-100%);} to{transform:translateX(100%);} }
+@keyframes pulseRing   { 0%{transform:scale(1);opacity:.6;} 100%{transform:scale(2.6);opacity:0;} }
 @keyframes panGradient { from{background-position:0% 50%;} to{background-position:100% 50%;} }
 @keyframes drawStroke  { to{stroke-dashoffset:0;} }
+@keyframes glowPulse   { 0%,100%{opacity:.7;transform:scale(1);} 50%{opacity:1;transform:scale(1.08);} }
+@keyframes borderFlow  { 0%{background-position:0% 50%;} 100%{background-position:200% 50%;} }
+@keyframes numberPop   { 0%{transform:translateY(6px) scale(.9);opacity:0;} 70%{transform:translateY(-2px) scale(1.04);opacity:1;} 100%{transform:none;opacity:1;} }
+@keyframes slideRight  { from{transform:translateX(-8px);opacity:0;} to{transform:none;opacity:1;} }
+@keyframes slideLeft   { from{transform:translateX(8px);opacity:0;} to{transform:none;opacity:1;} }
+@keyframes bounceIn    { 0%{transform:scale(.4);opacity:0;} 60%{transform:scale(1.2);opacity:1;} 80%{transform:scale(.92);} 100%{transform:scale(1);} }
+@keyframes tiltIn      { from{transform:rotateX(6deg) translateY(10px);opacity:0;} to{transform:none;opacity:1;} }
+@keyframes morphCard   { from{border-radius:1.5rem;transform:scale(.96);opacity:0;} to{border-radius:1rem;transform:none;opacity:1;} }
+@keyframes gradientShift { 0%,100%{background-position:0% 50%;} 50%{background-position:100% 50%;} }
+@keyframes spinSlow    { to{transform:rotate(360deg);} }
+@keyframes waveBar     { 0%,100%{transform:scaleY(.4);} 50%{transform:scaleY(1);} }
 
-.anim-fade-up   { animation: fadeUp  .55s cubic-bezier(.2,.7,.2,1) both; animation-delay: var(--d, 0ms); }
-.anim-fade-in   { animation: fadeIn  .4s ease both; }
-.anim-scale-in  { animation: scaleIn .3s cubic-bezier(.2,.8,.2,1) both; }
-.anim-float-a   { animation: floatA 14s ease-in-out infinite; }
-.anim-float-b   { animation: floatB 18s ease-in-out infinite; }
-.anim-pan       { background-size:200% 100%; animation: panGradient 5s ease-in-out infinite alternate; }
-.anim-draw      { stroke-dasharray:100; stroke-dashoffset:100; animation: drawStroke 1.4s .5s ease-out forwards; }
+.anim-fade-up      { animation: fadeUp      .55s cubic-bezier(.2,.7,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-fade-down    { animation: fadeDown    .45s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-fade-in      { animation: fadeIn      .4s  ease both; }
+.anim-scale-in     { animation: scaleIn     .32s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-scale-in-big { animation: scaleInBig  .4s  cubic-bezier(.2,.85,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-float-a      { animation: floatA  16s ease-in-out infinite; }
+.anim-float-b      { animation: floatB  20s ease-in-out infinite; }
+.anim-float-c      { animation: floatC  13s ease-in-out infinite; }
+.anim-pan          { background-size:200% 100%; animation: panGradient  5s  ease-in-out infinite alternate; }
+.anim-draw         { stroke-dasharray:100; stroke-dashoffset:100; animation: drawStroke 1.4s .5s ease-out forwards; }
+.anim-glow-pulse   { animation: glowPulse   3.5s ease-in-out infinite; }
+.anim-border-flow  { background-size:200% 100%; animation: borderFlow   3s  linear infinite; }
+.anim-number-pop   { animation: numberPop   .5s  cubic-bezier(.2,.9,.3,1.3) both; }
+.anim-slide-right  { animation: slideRight  .35s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-slide-left   { animation: slideLeft   .35s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-bounce-in    { animation: bounceIn    .6s  cubic-bezier(.2,.9,.3,1.2) both; animation-delay: var(--d, 0ms); }
+.anim-tilt-in      { animation: tiltIn      .45s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-morph-card   { animation: morphCard   .4s  cubic-bezier(.2,.85,.2,1) both; animation-delay: var(--d, 0ms); }
+.anim-gradient     { background-size:300% 300%; animation: gradientShift 6s  ease infinite; }
+.anim-spin-slow    { animation: spinSlow    8s   linear infinite; }
 
-/* Shimmer bar overlay */
+/* Shimmer overlays */
 .shimmer-bar::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
-  animation: shimmerMove 2.6s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+  animation: shimmerSlow 2.4s ease-in-out infinite;
+}
+.shimmer-fast::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.4) 50%, transparent 70%);
+  transform: translateX(-120%) skewX(-10deg);
+  transition: none;
+}
+.shimmer-fast:hover::after {
+  animation: shimmerMove .9s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -319,3 +372,208 @@ code, kbd, samp, pre {
   }
 }
 
+/* ══════════════════════════════════════════════════════════
+   Dark mode polish
+   Scoped to html.dark, so light mode is untouched.
+   Glow, selection and grid colours follow the chosen palette.
+══════════════════════════════════════════════════════════ */
+
+/* Native controls (time pickers, select lists, scrollbars) follow the dark theme */
+html.dark { color-scheme: dark; }
+
+html.dark ::selection { background: rgba(var(--glow-a), 0.45); color: #ffffff; }
+
+html.dark ::-webkit-scrollbar-thumb       { background: rgba(255, 255, 255, 0.12); }
+html.dark ::-webkit-scrollbar-thumb:hover { background: rgba(var(--glow-b), 0.55); }
+
+/* Card hover glow: primary core with a faint secondary halo */
+html.dark .spotlight-glow {
+  background: radial-gradient(
+    300px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(var(--glow-a), 0.18),
+    rgba(var(--glow-b), 0.05) 45%,
+    transparent 70%
+  );
+}
+
+/* Faint blueprint grid that fades out down the page */
+html.dark .ambient-grid {
+  background-image:
+    linear-gradient(rgba(var(--glow-b), 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--glow-b), 0.04) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 25%, transparent 80%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 25%, transparent 80%);
+}
+
+/* ══════════════════════════════════════════════════════════
+   Modern Glass Cards & Interactive Effects
+══════════════════════════════════════════════════════════ */
+
+/* Glass card base - ultra-modern frosted glass */
+.glass-card {
+  background: rgba(var(--glass-bg, 14,14,17), 0.72);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow: 0 8px 32px -8px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  transition: box-shadow .25s ease, border-color .25s ease, transform .25s ease;
+}
+.glass-card:hover {
+  box-shadow: 0 16px 48px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(var(--glow-a),.12), inset 0 1px 0 rgba(255,255,255,0.08);
+  border-color: rgba(var(--glow-a), 0.18);
+}
+html:not(.dark) .glass-card {
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(20px) saturate(1.6);
+  border-color: rgba(0,0,0,0.07);
+  box-shadow: 0 4px 24px -4px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,0.9);
+}
+html:not(.dark) .glass-card:hover {
+  box-shadow: 0 12px 40px -8px rgba(0,0,0,.13), 0 0 0 1px rgba(var(--glow-a),.14);
+}
+
+/* Neon glow border on focus/active cards */
+.glow-border {
+  position: relative;
+}
+.glow-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(var(--glow-a),.5), rgba(var(--glow-b),.5));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity .3s ease;
+  pointer-events: none;
+}
+.glow-border:hover::before,
+.glow-border:focus-within::before { opacity: 1; }
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, rgb(var(--glow-a)), rgb(var(--glow-b)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Animated gradient border */
+.anim-border {
+  position: relative;
+  border-radius: inherit;
+}
+.anim-border::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(var(--angle, 135deg), rgba(var(--glow-a),.8), rgba(var(--glow-b),.8), rgba(var(--glow-a),.8));
+  background-size: 200% 200%;
+  animation: borderFlow 3s linear infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .3s;
+}
+.anim-border:hover::after { opacity: 1; }
+
+/* ══════════════════════════════════════════════════════════
+   Button Enhancements
+══════════════════════════════════════════════════════════ */
+
+/* Primary action button with glow on hover */
+.btn-glow {
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s ease, box-shadow .25s ease;
+}
+.btn-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.35) 50%, transparent 65%);
+  transform: translateX(-120%) skewX(-10deg);
+  pointer-events: none;
+}
+.btn-glow:hover::after {
+  animation: shimmerMove .75s ease-out;
+}
+.btn-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(var(--glow-a), .45);
+}
+.btn-glow:active { transform: translateY(0) scale(.97); }
+
+/* ══════════════════════════════════════════════════════════
+   Metric & stat enhancements
+══════════════════════════════════════════════════════════ */
+
+/* Stat ring / progress circle helper */
+.stat-ring {
+  transition: stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1);
+}
+
+/* Pulsing status indicator */
+.status-live {
+  position: relative;
+  display: inline-flex;
+}
+.status-live::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: pulseRing 2s ease-out infinite;
+  opacity: .5;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Page-transition helpers
+══════════════════════════════════════════════════════════ */
+.page-enter {
+  animation: scaleIn .35s cubic-bezier(.2,.85,.2,1) both;
+}
+
+/* Stagger utility — set --stagger on a parent, children get auto delays */
+.stagger-children > * {
+  animation-delay: calc(var(--stagger, 60ms) * var(--i, 0));
+}
+
+/* ══════════════════════════════════════════════════════════
+   Tooltip enhancement
+══════════════════════════════════════════════════════════ */
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  white-space: nowrap;
+  font-size: .75rem;
+  font-weight: 500;
+  padding: .3rem .65rem;
+  border-radius: .5rem;
+  background: var(--color-surface-container-highest);
+  color: var(--color-on-surface);
+  border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s, transform .15s;
+  z-index: 100;
+}
+[data-tooltip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}

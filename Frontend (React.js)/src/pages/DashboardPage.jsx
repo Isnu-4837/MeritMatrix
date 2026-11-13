@@ -158,6 +158,24 @@ const STYLES = `
   color: var(--color-on-surface-variant, #aaa);
 }
 
+/* animated gradient border on card hover */
+.dp-card-border {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(var(--glow-a),.5) 0%, rgba(var(--glow-b),.5) 50%, rgba(var(--glow-a),.5) 100%);
+  background-size: 200% 200%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease;
+  z-index: 0;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+}
+.group:hover .dp-card-border { opacity: 1; animation: dp-border 2.5s linear infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .dp-rise, .dp-draw, .dp-fade { animation: none !important; }
   .dp-draw { stroke-dashoffset: 0; }
@@ -181,6 +199,9 @@ const getGreeting = () => {
   return 'Good evening';
 };
 
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50';
+
 const formatToday = () =>
   new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -194,12 +215,12 @@ const asButton = (onActivate) => ({
   tabIndex: 0,
   onClick: onActivate,
   onKeyDown: (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate(); }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onActivate(e);
+    }
   },
 });
-
-const FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
 
 /* ------------------------------------------------------------------ */
 /*  Animated primitives                                                */
@@ -345,7 +366,9 @@ const MetricCard = ({ metric, index }) => {
           aria-valuemax={100}
           className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden"
         >
-          <AnimatedBar value={metric.progress} delay={delay + 200} className={metric.bar} />
+          <AnimatedBar value={metric.progress} delay={delay + 200} className={`${metric.bar} relative`} />
+          {/* shimmer sweep on the bar */}
+          <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent)', animation: 'dp-sheen 1.8s ease-out 1' }} aria-hidden="true" />
         </div>
         <p className="mt-1 text-right text-xs text-outline">{metric.progress}%</p>
       </div>
@@ -362,6 +385,9 @@ const InsightCard = ({ title, subtitle, badge, index = 0, className = '', childr
     style={{ '--d': `${200 + index * 80}ms` }}
     className={`dp-rise dp-card relative p-6 flex flex-col gap-4 ${className}`}
   >
+    {/* subtle top gradient line */}
+    <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-outline-variant/50 to-transparent" aria-hidden="true" />
+
     <div className="flex items-start justify-between gap-3">
       <div>
         <h3 className="text-base font-semibold text-on-surface leading-tight">{title}</h3>
@@ -784,12 +810,17 @@ const ProjectCard = ({ project, index, onSelect }) => {
             aria-valuenow={project.progressPercent}
             aria-valuemin={0}
             aria-valuemax={100}
-            className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden"
+            className="relative w-full bg-surface-container-highest h-2 rounded-full overflow-hidden"
           >
             <AnimatedBar
               value={project.progressPercent}
               delay={delay + 150}
-              className={`bg-gradient-to-r ${project.accentGradient}`}
+              className={`bg-gradient-to-r ${project.accentGradient} relative`}
+            />
+            {/* shimmer on bar */}
+            <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: 'linear-gradient(90deg, transparent 20%, rgba(255,255,255,.3) 50%, transparent 80%)', backgroundSize: '200% 100%', animation: 'dp-pan 1.5s ease-out 1' }}
+              aria-hidden="true"
             />
           </div>
         </div>
