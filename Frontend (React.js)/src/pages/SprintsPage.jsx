@@ -1,20 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /* ==========================================================================
-   SprintsPage
+   SprintsPage  (enhanced)
    --------------------------------------------------------------------------
-   1. Data & constants      people, squads, weeks, status + color maps
-   2. Styles                fonts, keyframes, effect classes
-   3. Hooks                 motion, number tween, toast, dismiss (Esc/outside)
-   4. UI primitives         Dot, Avatar, StatusBadge, HoursBar, SpotlightCard…
-   5. Board pieces          allocation bars, person cards, week ruler, legend
-   6. Page sections         Header, Overview, Filters, Toolbar, Toast, Copilot
-   7. Page                  state + composition
-
    Page layout, top to bottom:
-     Header     title, sprint progress + the two main actions
-     Left rail  overview cards, then squad and status filters (sticky)
-     Board      search + zoom, week ruler, one card per person, legend
+     1. Header      title, sprint progress, primary actions
+     2. Overview    four KPI cards (utilization, open capacity, health, overlap)
+     3. Workspace   left rail (filters, sticky) + board (toolbar, ruler, people)
+
+   File layout:
+     1. Data & constants     people, squads, weeks, status + tone maps, stats
+     2. Styles               keyframes and effect classes (scoped to .sp-root)
+     3. Hooks                motion, tween, toast, dismiss
+     4. UI primitives        Icon, Dot, Avatar, StatusBadge, HoursBar, cards
+     5. Timeline pieces      bars, per-person cells, person card, ruler, legend
+     6. Page sections        header, overview, filters, toolbar, toast, copilot
+     7. Page                 state + composition
    ========================================================================== */
 
 /* ==========================================================================
@@ -36,6 +37,13 @@ const TIMESPANS = [
   { id: 'weeks', label: 'Weeks' },
   { id: 'days', label: 'Days' },
   { id: 'quarter', label: 'Quarter' },
+];
+
+const SORTS = [
+  { id: 'default', label: 'Default order' },
+  { id: 'load', label: 'Most booked' },
+  { id: 'free', label: 'Most free time' },
+  { id: 'name', label: 'Name A–Z' },
 ];
 
 const SQUADS = {
@@ -81,11 +89,11 @@ const STATUS = {
   overbooked: {
     filter: 'Overbooked', dot: 'bg-error',
     badge: 'bg-error text-on-error font-semibold',
-    text: (h) => `Double-booked (${h}h)`,
+    text: (h) => `Over capacity (${h}h)`,
   },
   bench: {
-    filter: 'On bench', dot: 'bg-secondary',
-    badge: 'bg-secondary/15 text-secondary border border-secondary/20 font-semibold',
+    filter: 'On bench', dot: 'bg-tertiary',
+    badge: 'bg-tertiary/15 text-tertiary border border-tertiary/30 font-semibold',
     text: (h) => `On bench (${CAPACITY - h}h free)`,
   },
   capacity: {
@@ -99,7 +107,8 @@ const STATUS = {
     text: (h) => `Optimal (${h}h)`,
   },
 };
-const STATUS_FILTERS = ['all', 'overbooked', 'bench', 'capacity', 'optimal'];
+const STATUS_ORDER = ['overbooked', 'bench', 'capacity', 'optimal'];
+const STATUS_FILTERS = ['all', ...STATUS_ORDER];
 
 // Colors for allocation bars.
 const TONES = {
@@ -111,7 +120,7 @@ const TONES = {
   moved: { bar: 'bg-gradient-to-r from-secondary-container/20 to-primary-container/20 border-secondary/40', dot: 'bg-secondary text-secondary', tag: 'text-on-surface bg-transparent' },
 };
 
-// Simple allocations (people with special rows are handled in section 4).
+// Simple allocations (people with special rows are handled in section 5).
 const ALLOCATIONS = {
   alex: [
     { title: 'Realtime Multi-Agent Orchestrator', meta: 'Core Engine Phase 2 · 36h/wk', tag: 'Oct 02 – Oct 22', tone: 'primary', span: 'col-span-3' },
@@ -122,8 +131,18 @@ const ALLOCATIONS = {
   ],
 };
 
+// Team-wide numbers, derived from PEOPLE so the cards never disagree with the board.
+const getStats = (resolved) => {
+  const hours = PEOPLE.map((p) => p.hours(resolved));
+  const available = PEOPLE.length * CAPACITY;
+  const booked = hours.reduce((sum, h) => sum + Math.min(h, CAPACITY), 0);
+  const free = hours.reduce((sum, h) => sum + Math.max(CAPACITY - h, 0), 0);
+  const overloaded = PEOPLE.filter((p) => p.status(resolved) === 'overbooked').length;
+  return { available, booked, free, overloaded, pct: Math.round((booked / available) * 100) };
+};
+
 /* ==========================================================================
-   2. STYLES  (fonts, keyframes and effect classes, scoped to .sp-root)
+   2. STYLES  (keyframes and effect classes, scoped to .sp-root)
    ========================================================================== */
 
 const STYLES = `
@@ -133,44 +152,29 @@ const STYLES = `
   @keyframes spEnter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
   @keyframes spPop { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
   @keyframes spGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  @keyframes spGlow { 0%,100% { box-shadow: 0 0 0 0 rgba(255,180,171,0); } 50% { box-shadow: 0 0 22px 2px rgba(255,180,171,.28); } }
   @keyframes spRing { 0% { box-shadow: 0 0 0 0 rgba(255,180,171,.55); } 100% { box-shadow: 0 0 0 12px rgba(255,180,171,0); } }
   @keyframes spOrb { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.9); opacity: 0; } }
-  @keyframes spDrift { 0%,100% { transform: translate(0,0); } 50% { transform: translate(24px,18px); } }
-  @keyframes spLine { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   @keyframes spParticle { from { transform: translate(-50%,-50%) rotate(var(--a)) translateY(0) scale(1); opacity: 1; } to { transform: translate(-50%,-50%) rotate(var(--a)) translateY(-40px) scale(.2); opacity: 0; } }
   @keyframes spShine { from { background-position: 0% 50%; } to { background-position: 200% 50%; } }
-  @keyframes spFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
   @keyframes spBarIn { from { opacity: 0; transform: translateX(-16px) scaleX(.94); } to { opacity: 1; transform: none; } }
   @keyframes spFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   @keyframes spFlash { 0% { background-color: rgba(76,215,246,.22); } 100% { background-color: transparent; } }
   @keyframes spShrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-  @keyframes spBeam { 0% { transform: translateX(-120%); } 60%,100% { transform: translateX(520%); } }
   .sp-enter { animation: spEnter .5s cubic-bezier(.2,.7,.2,1) backwards; }
-  .sp-shine { animation: spShine 7s linear infinite; }
-  .{ animation: spFloat 4s ease-in-out infinite; }
   .sp-barin { transform-origin: left; animation: spBarIn .6s cubic-bezier(.2,.7,.2,1) backwards; }
   .sp-fill { transform-origin: left; animation: spFill .9s cubic-bezier(.2,.7,.2,1) backwards; }
   .sp-flash { animation: spFlash 1.4s ease-out; }
   .sp-slide { animation: spShine 5s linear infinite; }
   .sp-shrink { transform-origin: left; animation: spShrink 4s linear forwards; }
-  .sp-beam { animation: spBeam 3.6s ease-in-out 1.2s infinite; }
-  .{ position: relative; overflow: hidden; }
-  .sp-sheen::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 35%, rgba(255,255,255,.16) 50%, transparent 65%); transform: translateX(-130%); transition: transform .8s ease; }
-  .sp-sheen:hover::after { transform: translateX(130%); }
   .sp-pop { animation: spPop .2s ease-out both; }
   .sp-grow { transform-origin: left; animation: spGrow .9s cubic-bezier(.2,.7,.2,1) .2s both; }
-  .sp-underline { transform-origin: left; animation: spLine .9s cubic-bezier(.2,.7,.2,1) .15s both; }
-  .{ animation: spGlow 2.4s ease-in-out infinite; }
   .sp-ring { animation: spRing 1.8s ease-out infinite; }
   .sp-orb { animation: spOrb 2s ease-out infinite; }
-  .sp-drift { animation: spDrift 14s ease-in-out infinite; }
   .sp-particle { animation: spParticle .9s ease-out both; }
   .sp-spot { background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(76,215,246,.10), transparent 70%); }
   .sp-card:hover .sp-spot { opacity: 1; }
   @media (prefers-reduced-motion: reduce) {
-    .sp-enter, .sp-pop, .sp-grow, .sp-underline, .sp-glow, .sp-ring, .sp-orb, .sp-drift, .sp-particle, .sp-shine, .sp-float, .sp-barin, .sp-fill, .sp-flash, .sp-slide, .sp-shrink, .sp-beam { animation: none !important; }
-    .sp-sheen::after { display: none; }
+    .sp-enter, .sp-pop, .sp-grow, .sp-ring, .sp-orb, .sp-particle, .sp-barin, .sp-fill, .sp-flash, .sp-slide, .sp-shrink { animation: none !important; }
   }
 `;
 
@@ -258,13 +262,6 @@ const Icon = ({ name, className = '' }) => (
   <span className={`material-symbols-outlined ${className}`} aria-hidden="true">{name}</span>
 );
 
-const Avatar = ({ src, name, alert = false }) => (
-  <span className="relative inline-flex shrink-0 rounded-full">
-    {alert && <span className="sp-ring absolute inset-0 rounded-full" aria-hidden="true" />}
-    <AvatarImg src={src} name={name} />
-  </span>
-);
-
 const AvatarImg = ({ src, name }) => {
   const [failed, setFailed] = useState(false);
   if (failed) {
@@ -282,11 +279,18 @@ const AvatarImg = ({ src, name }) => {
   );
 };
 
+const Avatar = ({ src, name, alert = false }) => (
+  <span className="relative inline-flex shrink-0 rounded-full">
+    {alert && <span className="sp-ring absolute inset-0 rounded-full" aria-hidden="true" />}
+    <AvatarImg src={src} name={name} />
+  </span>
+);
+
 const StatusBadge = ({ status, hours }) => {
   const s = STATUS[status];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs ${s.badge}`}>
-      {status !== 'overbooked' && <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />}
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs whitespace-nowrap ${s.badge}`}>
+      {status !== 'overbooked' && <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} aria-hidden="true" />}
       {s.text(hours)}
     </span>
   );
@@ -294,7 +298,7 @@ const StatusBadge = ({ status, hours }) => {
 
 const HoursBar = ({ name, hours, over }) => (
   <div
-    className="mt-1.5 h-1 w-full max-w-[170px] rounded-full bg-surface-container-highest overflow-hidden"
+    className="mt-1.5 h-1.5 w-full rounded-full bg-surface-container-highest overflow-hidden"
     role="progressbar" aria-valuenow={hours} aria-valuemin={0} aria-valuemax={CAPACITY}
     aria-label={`${name} is booked ${hours} of ${CAPACITY} hours`}
   >
@@ -318,8 +322,9 @@ const SpotlightCard = ({ className = '', delay = 0, children }) => {
   return (
     <div
       ref={ref} onMouseMove={onMove} style={{ animationDelay: `${delay}ms` }}
-      className={`sp-card sp-enter group/card relative overflow-hidden rounded-2xl bg-surface-container/70 backdrop-blur-xl border border-outline-variant/30 shadow-md transition-[border-color,transform,box-shadow] duration-300 hover:border-secondary/40 hover:-translate-y-1 hover:shadow-xl ${className}`}
+      className={`sp-card sp-enter group/card relative overflow-hidden rounded-2xl bg-surface-container/70 backdrop-blur-xl border border-outline-variant/30 shadow-md transition-[border-color,transform,box-shadow] duration-300 hover:border-secondary/40 hover:-translate-y-0.5 hover:shadow-xl ${className}`}
     >
+      <span className="sp-spot pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300" aria-hidden="true" />
       <span className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-secondary/70 to-transparent opacity-0 transition-opacity duration-300 group-hover/card:opacity-100" aria-hidden="true" />
       <div className="relative h-full">{children}</div>
     </div>
@@ -333,6 +338,14 @@ const Burst = () => (
       <span key={i} className="sp-particle absolute left-1/2 top-1/2 w-1.5 h-1.5 rounded-full bg-secondary" style={{ '--a': `${i * 30}deg`, animationDelay: `${(i % 3) * 40}ms` }} />
     ))}
   </span>
+);
+
+const SectionTitle = ({ title, hint, children }) => (
+  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-space-sm">
+    <h2 className="text-lg font-semibold text-on-surface">{title}</h2>
+    {hint && <span className="font-mono text-xs text-outline">{hint}</span>}
+    {children}
+  </div>
 );
 
 /* ==========================================================================
@@ -361,7 +374,7 @@ const AllocationBar = ({ title, meta, tag, tone = 'neutral', span = '', compact 
 };
 
 // Standard right-hand cell: bars laid out on the 4-week grid.
-const SimpleCell = ({ bars }) => (
+const SimpleCell = ({ bars = [] }) => (
   <div className="grid grid-cols-4 gap-2 items-center">
     {bars.map((b, i) => <AllocationBar key={b.title} delay={250 + i * 140} {...b} />)}
   </div>
@@ -441,17 +454,17 @@ const MarcusCell = ({ resolved, onRebalance }) => (
         <div className="grid grid-cols-4 gap-2">
           <div className="col-span-3 h-11 rounded-lg bg-surface-container-high/90 p-2 flex items-center justify-between shadow-md border border-outline-variant/30">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-tertiary" />
+              <span className="w-2 h-2 rounded-full bg-tertiary" aria-hidden="true" />
               <span className="text-sm font-semibold text-on-surface truncate">Kinetic UI Token Library</span>
             </div>
             <span className="font-mono text-xs text-tertiary">32h/wk</span>
           </div>
           <div className="col-start-2 col-span-3 -mt-3.5 h-11 rounded-lg bg-surface-container-highest/95 p-2 flex items-center justify-between shadow-xl border border-error/40">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-error animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-error animate-pulse" aria-hidden="true" />
               <span className="text-sm font-semibold text-error truncate">Hyperion Client Portal Sprint Finish</span>
             </div>
-            <span className="font-mono text-xs text-error bg-error-container/60 px-1.5 py-0.5 rounded">24h/wk · overlaps</span>
+            <span className="font-mono text-xs text-error bg-error-container/60 px-1.5 py-0.5 rounded shrink-0">24h/wk · overlaps</span>
           </div>
         </div>
       </div>
@@ -474,7 +487,7 @@ const SophiaCell = ({ resolved, onAssign }) => (
       >
         <span className="flex items-center gap-2 text-outline group-hover/drop:text-secondary transition-colors min-w-0">
           <Icon name="add_circle" className="text-sm shrink-0 transition-transform duration-300 group-hover/drop:rotate-90" />
-          <span className="font-mono text-xs font-medium">15h free, a good fit for the frontend overflow</span>
+          <span className="font-mono text-xs font-medium truncate">15h free, a good fit for the frontend overflow</span>
         </span>
         <span className="px-2 py-1 rounded bg-secondary/10 text-secondary group-hover/drop:bg-secondary group-hover/drop:text-on-secondary font-mono text-xs font-semibold transition-all shrink-0">Assign task</span>
       </button>
@@ -486,13 +499,27 @@ const SophiaCell = ({ resolved, onAssign }) => (
   </div>
 );
 
-// One card per person: who they are and how loaded they are on top, their weekly lane underneath.
+// Day gridlines behind each lane, shown only in Days view.
+const LaneGuides = ({ showDays }) =>
+  showDays ? (
+    <div className="pointer-events-none absolute inset-y-0 left-5 right-5 grid grid-cols-4 gap-2" aria-hidden="true">
+      {WEEKS.map((w) => (
+        <div
+          key={w.name}
+          style={{ backgroundImage: 'linear-gradient(to right, transparent calc(100% - 1px), rgba(148,163,184,.14) 0)', backgroundSize: 'calc(100% / 7) 100%' }}
+        />
+      ))}
+    </div>
+  ) : null;
+
+// One card per person: identity and load on top, their weekly lane underneath.
 const PersonCard = ({ person, index, resolved, flash = false, showDays, children }) => {
   const hours = person.hours(resolved);
   const status = person.status(resolved);
   const conflict = status === 'overbooked';
   return (
     <article
+      aria-label={`${person.name}, ${STATUS[status].text(hours)}`}
       style={{ animationDelay: `${index * 70}ms` }}
       className={`sp-enter group relative overflow-hidden rounded-3xl border backdrop-blur-xl shadow-md transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:shadow-xl ${flash ? 'sp-flash ' : ''}${
         conflict ? 'border-error/40 bg-error-container/15' : 'border-outline-variant/30 bg-surface-container/70 hover:border-secondary/40'
@@ -530,46 +557,35 @@ const PersonCard = ({ person, index, resolved, flash = false, showDays, children
   );
 };
 
-// Day gridlines behind each lane, shown only in Days view. No coloured boxes in the other views.
-const LaneGuides = ({ showDays }) =>
-  showDays ? (
-    <div className="pointer-events-none absolute inset-y-0 left-5 right-5 grid grid-cols-4 gap-2" aria-hidden="true">
+// Week labels, lined up with the lanes inside every card. Sticks while scrolling the board.
+const WeekRuler = ({ showDays }) => (
+  <div className="lg:sticky lg:top-24 z-20 -mx-1 px-1 pt-3 pb-2 mb-space-xs bg-background/80 backdrop-blur-md">
+    <div className="grid grid-cols-4 gap-2 px-[21px]">
       {WEEKS.map((w) => (
         <div
           key={w.name}
-          style={{ backgroundImage: 'linear-gradient(to right, transparent calc(100% - 1px), rgba(148,163,184,.14) 0)', backgroundSize: 'calc(100% / 7) 100%' }}
-        />
+          className={`relative flex flex-col items-center rounded-xl border py-2 ${w.current ? 'border-secondary/40 bg-secondary/10' : 'border-outline-variant/20 bg-surface-container-highest/40'}`}
+        >
+          {w.current && <span className="absolute -top-2 px-1.5 rounded-full font-mono text-xs font-semibold bg-secondary text-on-secondary shadow-sm">Current</span>}
+          <span className={`font-mono text-sm font-semibold ${w.current ? 'text-secondary' : 'text-on-surface'}`}>{w.name}</span>
+          <span className={`font-mono text-xs ${w.current ? 'text-secondary' : 'text-outline'}`}>{w.range}</span>
+          {showDays && (
+            <div className="sp-pop flex w-full justify-between mt-1 px-2 font-mono text-[11px] text-outline" aria-hidden="true">
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i}>{d}</span>)}
+            </div>
+          )}
+        </div>
       ))}
     </div>
-  ) : null;
-
-// Week labels, lined up with the lanes inside every card.
-const WeekRuler = ({ showDays }) => (
-  <div className="grid grid-cols-4 gap-2 px-[21px] mb-space-sm">
-    {WEEKS.map((w) => (
-      <div
-        key={w.name}
-        className={`relative flex flex-col items-center rounded-xl border py-2 ${w.current ? 'border-secondary/40 bg-secondary/10' : 'border-outline-variant/20 bg-surface-container-highest/40'}`}
-      >
-        {w.current && <span className="absolute -top-2 px-1.5 rounded-full font-mono text-xs font-semibold bg-secondary text-on-secondary shadow-sm">Current</span>}
-        <span className={`font-mono text-sm font-semibold ${w.current ? 'text-secondary' : 'text-on-surface'}`}>{w.name}</span>
-        <span className={`font-mono text-xs ${w.current ? 'text-secondary' : 'text-outline'}`}>{w.range}</span>
-        {showDays && (
-          <div className="sp-pop flex w-full justify-between mt-1 px-2 font-mono text-[11px] text-outline" aria-hidden="true">
-            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i}>{d}</span>)}
-          </div>
-        )}
-      </div>
-    ))}
   </div>
 );
 
 const Legend = () => (
   <div className="mt-space-sm rounded-2xl flex flex-wrap items-center gap-x-5 gap-y-1 px-space-md py-3 border border-outline-variant/20 bg-surface-container-highest/30 font-mono text-xs text-outline">
     <span className="text-on-surface-variant">Key</span>
-    {['overbooked', 'bench', 'capacity', 'optimal'].map((k) => (
+    {STATUS_ORDER.map((k) => (
       <span key={k} className="flex items-center gap-1.5">
-        <span className={`w-2 h-2 rounded-full ${STATUS[k].dot}`} /> {STATUS[k].filter}
+        <span className={`w-2 h-2 rounded-full ${STATUS[k].dot}`} aria-hidden="true" /> {STATUS[k].filter}
       </span>
     ))}
     <span className="ml-auto hidden sm:inline">The bar beside each name shows hours booked out of {CAPACITY}</span>
@@ -579,19 +595,6 @@ const Legend = () => (
 /* ==========================================================================
    6. PAGE SECTIONS
    ========================================================================== */
-
-const TimespanToggle = ({ value, onChange }) => (
-  <div className="flex items-center bg-surface-container-low rounded-xl p-1 shadow-inner border border-outline-variant/20" role="group" aria-label="Timeline zoom">
-    {TIMESPANS.map((t) => (
-      <button
-        key={t.id} type="button" aria-pressed={value === t.id} onClick={() => onChange(t.id)}
-        className={`px-space-sm py-1 rounded-lg text-sm font-mono transition-all cursor-pointer active:scale-95 ${focusRing} ${value === t.id ? 'bg-surface-container-highest text-on-surface font-semibold shadow-sm' : 'text-outline hover:text-on-surface'}`}
-      >
-        {t.label}
-      </button>
-    ))}
-  </div>
-);
 
 const ConflictStatus = ({ resolved, celebrate, onResolve }) =>
   !resolved ? (
@@ -610,8 +613,23 @@ const ConflictStatus = ({ resolved, celebrate, onResolve }) =>
     </div>
   );
 
+const SprintProgress = () => {
+  const pct = Math.round((CYCLE_DAY / CYCLE_TOTAL) * 100);
+  return (
+    <div className="mt-4 max-w-md">
+      <div className="flex items-center justify-between gap-3 text-sm mb-1.5">
+        <span className="font-medium text-on-surface">Sprint 14 · Day {CYCLE_DAY} of {CYCLE_TOTAL}</span>
+        <span className="font-mono text-xs text-outline">{CYCLE_TOTAL - CYCLE_DAY} days left</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-surface-container-highest overflow-hidden" role="progressbar" aria-label="Sprint progress" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className="sp-fill h-full rounded-full bg-gradient-to-r from-primary to-secondary" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+};
+
 const PageHeader = ({ resolved, celebrate, onResolve, onAllocate }) => (
-  <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-space-md">
+  <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-space-md">
     <div className="flex flex-col">
       <p className="text-sm font-medium text-secondary mb-1">Sprints 14–16</p>
       <h1 className="font-semibold text-on-surface" style={{ fontSize: 'clamp(1.75rem, 3vw, 2.25rem)', letterSpacing: '-0.025em', lineHeight: 1.15 }}>
@@ -620,12 +638,7 @@ const PageHeader = ({ resolved, celebrate, onResolve, onAllocate }) => (
       <p className="text-sm text-on-surface-variant max-w-xl mt-2">
         See who is booked on what, spot overloads, and rebalance work across squads.
       </p>
-      <div className="mt-4 flex items-center gap-3 max-w-md">
-        <span className="text-sm font-medium text-on-surface whitespace-nowrap">Sprint 14 · Day {CYCLE_DAY} of {CYCLE_TOTAL}</span>
-        <div className="flex-1 h-1.5 rounded-full bg-surface-container-highest overflow-hidden" role="progressbar" aria-label="Sprint progress" aria-valuenow={Math.round((CYCLE_DAY / CYCLE_TOTAL) * 100)} aria-valuemin={0} aria-valuemax={100}>
-          <div className="sp-fill h-full rounded-full bg-gradient-to-r from-primary to-secondary" style={{ width: `${(CYCLE_DAY / CYCLE_TOTAL) * 100}%` }} />
-        </div>
-      </div>
+      <SprintProgress />
     </div>
 
     <div className="flex flex-wrap items-center gap-space-sm">
@@ -638,77 +651,67 @@ const PageHeader = ({ resolved, celebrate, onResolve, onAllocate }) => (
         <span>Allocate member</span>
       </button>
     </div>
-  </div>
-);
-
-const SectionTitle = ({ title, hint }) => (
-  <div className="flex items-baseline justify-between gap-3 mb-space-sm">
-    <h2 className="text-lg font-semibold text-on-surface">{title}</h2>
-    {hint && <span className="font-mono text-xs text-outline">{hint}</span>}
-  </div>
+  </header>
 );
 
 const SummarySection = ({ resolved }) => {
-  const pct = useTween(resolved ? 91 : 88);
-  const booked = Math.round(useTween(resolved ? 182 : 178));
+  const stats = getStats(resolved);
+  const pct = useTween(stats.pct);
+  const booked = Math.round(useTween(stats.booked));
+  const free = Math.round(useTween(stats.free));
   const circ = 2 * Math.PI * 18;
+  const healthy = stats.pct >= 80;
+
   return (
-    <section aria-label="Overview" className="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+    <section aria-label="Overview" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-md">
       {/* Utilization */}
       <SpotlightCard className="p-space-md" delay={0}>
         <div className="flex items-center gap-space-md">
-          <div className="relative w-16 h-16 shrink-0 flex items-center justify-center" role="img" aria-label={`Total utilization ${resolved ? 91 : 88} percent`}>
+          <div className="relative w-16 h-16 shrink-0 flex items-center justify-center" role="img" aria-label={`Total utilization ${stats.pct} percent`}>
             <svg className="w-full h-full -rotate-90" viewBox="0 0 44 44">
               <circle className="text-surface-container-highest" cx="22" cy="22" r="18" fill="none" stroke="currentColor" strokeWidth="4.5" />
               <circle className="text-secondary drop-shadow-[0_0_5px_currentColor]" cx="22" cy="22" r="18" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="4.5" strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)} />
             </svg>
-            <span className="absolute font-mono text-sm font-semibold text-on-surface tabular-nums">{Math.round(pct)}%</span>
+            <span className="absolute font-mono text-sm font-semibold text-on-surface">{Math.round(pct)}%</span>
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
+            <span className="font-mono text-xs text-outline">Utilization</span>
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-lg font-semibold text-on-surface">Total utilization</span>
-              <span className="font-mono text-xs text-secondary bg-secondary/10 px-1.5 py-0.5 rounded">Healthy</span>
+              <span className="text-lg font-semibold text-on-surface">{healthy ? 'Healthy' : 'Underused'}</span>
             </div>
-            <span className="text-sm text-on-surface-variant font-mono">{booked}h booked of 200h available</span>
+            <span className="text-sm text-on-surface-variant font-mono">{booked}h of {stats.available}h booked</span>
           </div>
         </div>
       </SpotlightCard>
 
-      {/* Sync windows */}
+      {/* Open capacity */}
       <SpotlightCard className="p-space-md" delay={80}>
-        <div className="flex items-center justify-between gap-2 text-sm mb-2">
-          <span className="text-on-surface font-semibold flex items-center gap-1.5">
-            <Icon name="public" className="text-sm text-tertiary" /> Meeting overlap by timezone
-          </span>
-          <span className="text-secondary font-mono text-xs font-semibold bg-secondary-container/20 px-2 py-0.5 rounded-full whitespace-nowrap">3.5h shared</span>
-        </div>
-        <div className="sp-grow relative h-2.5 w-full bg-surface-container-highest rounded-full overflow-hidden flex">
-          <div className="w-1/4 h-full bg-primary/40" title="PST (San Francisco)" />
-          <div className="w-1/4 h-full bg-primary-container" title="EST (New York)" />
-          <div className="w-1/4 h-full bg-secondary" title="UTC (London): best overlap" />
-          <div className="w-1/4 h-full bg-tertiary/60" title="IST (Bengaluru)" />
-        </div>
-        <div className="flex justify-between items-center text-outline font-mono text-xs mt-1.5">
-          <span>PST 14h</span><span>EST 32h</span>
-          <span className="text-secondary font-semibold">UTC 68h (peak)</span>
-          <span>IST 64h</span>
+        <div className="flex items-center justify-between gap-space-md">
+          <div className="flex flex-col">
+            <span className="font-mono text-xs text-outline">Open capacity</span>
+            <span className="text-lg font-semibold text-on-surface">{free}h free this week</span>
+            <span className="font-mono text-xs text-on-surface-variant">{free === 0 ? 'Nobody has room' : 'Across people below capacity'}</span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-surface-container-highest flex items-center justify-center text-tertiary shadow-inner shrink-0">
+            <Icon name="event_available" />
+          </div>
         </div>
       </SpotlightCard>
 
-      {/* Health */}
+      {/* Team health */}
       <SpotlightCard className="p-space-md" delay={160}>
         <div className="flex items-center justify-between gap-space-md">
           <div className="flex flex-col">
             <span className="font-mono text-xs text-outline">Team health</span>
             <div className="flex items-center gap-2" key={resolved ? 'ok' : 'bad'}>
-              {!resolved ? (
+              {stats.overloaded > 0 ? (
                 <>
-                  <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full rounded-full bg-error animate-ping" /><span className="relative inline-flex h-2 w-2 rounded-full bg-error" /></span>
-                  <span className="sp-pop text-lg font-semibold text-error">1 overload</span>
+                  <span className="relative flex h-2 w-2" aria-hidden="true"><span className="absolute inline-flex h-full w-full rounded-full bg-error animate-ping" /><span className="relative inline-flex h-2 w-2 rounded-full bg-error" /></span>
+                  <span className="sp-pop text-lg font-semibold text-error">{stats.overloaded} overload</span>
                 </>
               ) : (
                 <>
-                  <span className="w-2 h-2 rounded-full bg-secondary" />
+                  <span className="w-2 h-2 rounded-full bg-secondary" aria-hidden="true" />
                   <span className="sp-pop text-lg font-semibold text-secondary">All balanced</span>
                 </>
               )}
@@ -718,6 +721,27 @@ const SummarySection = ({ resolved }) => {
           <div className="w-11 h-11 rounded-xl bg-surface-container-highest flex items-center justify-center text-primary shadow-inner shrink-0">
             <Icon name="hub" />
           </div>
+        </div>
+      </SpotlightCard>
+
+      {/* Sync windows */}
+      <SpotlightCard className="p-space-md" delay={240}>
+        <div className="flex items-center justify-between gap-2 text-sm mb-2">
+          <span className="text-on-surface font-semibold flex items-center gap-1.5 min-w-0">
+            <Icon name="public" className="text-sm text-tertiary" /> <span className="truncate">Timezone overlap</span>
+          </span>
+          <span className="text-secondary font-mono text-xs font-semibold bg-secondary-container/20 px-2 py-0.5 rounded-full whitespace-nowrap">3.5h shared</span>
+        </div>
+        <div className="sp-grow relative h-2.5 w-full bg-surface-container-highest rounded-full overflow-hidden flex" role="img" aria-label="Meeting hours by timezone: PST 14, EST 32, UTC 68, IST 64">
+          <div className="w-1/4 h-full bg-primary/40" title="PST (San Francisco)" />
+          <div className="w-1/4 h-full bg-primary-container" title="EST (New York)" />
+          <div className="w-1/4 h-full bg-secondary" title="UTC (London): best overlap" />
+          <div className="w-1/4 h-full bg-tertiary/60" title="IST (Bengaluru)" />
+        </div>
+        <div className="flex justify-between items-center text-outline font-mono text-[11px] mt-1.5">
+          <span>PST 14h</span><span>EST 32h</span>
+          <span className="text-secondary font-semibold">UTC 68h</span>
+          <span>IST 64h</span>
         </div>
       </SpotlightCard>
     </section>
@@ -748,14 +772,14 @@ const FilterGroup = ({ title, children }) => (
 
 // Left rail: squad and status as vertical lists.
 const FilterRail = ({ squad, onSquad, status, onStatus, counts, hasFilters, onClear }) => (
-  <SpotlightCard className="p-space-sm" delay={240}>
+  <SpotlightCard className="p-space-sm" delay={300}>
     <div className="flex flex-col gap-space-sm">
       <div className="flex items-center justify-between px-2 pt-1">
         <h2 className="text-lg font-semibold text-on-surface flex items-center gap-1.5">
           <Icon name="tune" className="text-base text-primary" /> Filters
         </h2>
         {hasFilters && (
-          <button type="button" onClick={onClear} className={`text-sm text-primary hover:underline rounded ${focusRing}`}>Clear</button>
+          <button type="button" onClick={onClear} className={`text-sm text-primary hover:underline rounded ${focusRing}`}>Clear all</button>
         )}
       </div>
       <FilterGroup title="Squad">
@@ -776,36 +800,68 @@ const FilterRail = ({ squad, onSquad, status, onStatus, counts, hasFilters, onCl
   </SpotlightCard>
 );
 
-// Above the cards: search and zoom.
+const TimespanToggle = ({ value, onChange }) => (
+  <div className="flex items-center bg-surface-container-low rounded-xl p-1 shadow-inner border border-outline-variant/20" role="group" aria-label="Timeline zoom">
+    {TIMESPANS.map((t) => (
+      <button
+        key={t.id} type="button" aria-pressed={value === t.id} onClick={() => onChange(t.id)}
+        className={`px-space-sm py-1 rounded-lg text-sm font-mono transition-all cursor-pointer active:scale-95 ${focusRing} ${value === t.id ? 'bg-surface-container-highest text-on-surface font-semibold shadow-sm' : 'text-outline hover:text-on-surface'}`}
+      >
+        {t.label}
+      </button>
+    ))}
+  </div>
+);
+
+// Above the cards: search, sort and zoom.
 const BoardToolbar = ({ query, onQuery, searchRef, timespan, onTimespan, sort, onSort }) => (
-  <div className="flex flex-col sm:flex-row sm:items-center gap-space-sm mb-space-md">
-      <div className="relative flex-1 min-w-[200px]">
-        <Icon name="search" className="absolute left-3 top-2.5 text-sm text-outline" />
-        <input
-          ref={searchRef} type="text" aria-label="Search people" placeholder="Search by name or role"
-          value={query} onChange={(e) => onQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && onQuery('')}
-          className="w-full pl-9 pr-10 py-2 rounded-xl bg-surface-container-lowest/80 text-on-surface placeholder:text-outline text-sm border border-outline-variant/30 transition focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
-        />
-        {query ? (
-          <button type="button" onClick={() => { onQuery(''); searchRef.current?.focus(); }} aria-label="Clear search" className="absolute right-2 top-1.5 p-1 rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition">
-            <Icon name="close" className="text-sm" />
-          </button>
-        ) : (
-          <kbd className="absolute right-3 top-2 rounded border border-outline-variant/40 px-1.5 text-xs font-mono text-outline" aria-hidden="true">/</kbd>
-        )}
-      </div>
+  <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-space-sm">
+    <div className="relative flex-1 min-w-[200px]">
+      <Icon name="search" className="absolute left-3 top-2.5 text-sm text-outline" />
+      <input
+        ref={searchRef} type="text" aria-label="Search people" placeholder="Search by name or role"
+        value={query} onChange={(e) => onQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && onQuery('')}
+        className="w-full pl-9 pr-10 py-2 rounded-xl bg-surface-container-lowest/80 text-on-surface placeholder:text-outline text-sm border border-outline-variant/30 transition focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
+      />
+      {query ? (
+        <button type="button" onClick={() => { onQuery(''); searchRef.current?.focus(); }} aria-label="Clear search" className="absolute right-2 top-1.5 p-1 rounded-lg text-outline hover:text-on-surface hover:bg-surface-container-high transition">
+          <Icon name="close" className="text-sm" />
+        </button>
+      ) : (
+        <kbd className="absolute right-3 top-2 rounded border border-outline-variant/40 px-1.5 text-xs font-mono text-outline" aria-hidden="true">/</kbd>
+      )}
+    </div>
     <label className="flex items-center gap-2 text-xs text-on-surface-variant">
       Sort
       <select value={sort} onChange={(e) => onSort(e.target.value)} className="rounded-lg bg-surface-container-lowest/80 border border-outline-variant/30 px-2 py-1.5 text-sm text-on-surface cursor-pointer focus:outline-none focus:ring-2 focus:ring-secondary">
-        <option value="default">Default order</option>
-        <option value="load">Most booked</option>
-        <option value="free">Most free time</option>
-        <option value="name">Name A–Z</option>
+        {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
       </select>
     </label>
     <TimespanToggle value={timespan} onChange={onTimespan} />
   </div>
 );
+
+// Removable chips that echo the active filters, so it is always clear why the board looks the way it does.
+const ActiveFilters = ({ squad, status, query, onSquad, onStatus, onQuery }) => {
+  const chips = [
+    squad !== 'All squads' && { key: 'squad', label: squad, clear: () => onSquad('All squads') },
+    status !== 'all' && { key: 'status', label: STATUS[status].filter, clear: () => onStatus('all') },
+    query.trim() && { key: 'query', label: `“${query.trim()}”`, clear: () => onQuery('') },
+  ].filter(Boolean);
+  if (!chips.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 mt-space-sm" aria-label="Active filters">
+      {chips.map((c) => (
+        <button
+          key={c.key} type="button" onClick={c.clear} aria-label={`Remove filter ${c.label}`}
+          className={`sp-pop flex items-center gap-1 rounded-full bg-primary-container/40 text-on-primary-container px-2.5 py-0.5 text-xs font-medium hover:bg-primary-container/60 transition ${focusRing}`}
+        >
+          {c.label} <Icon name="close" className="text-xs" />
+        </button>
+      ))}
+    </div>
+  );
+};
 
 const EmptyState = ({ onClear }) => (
   <div className="sp-enter flex flex-col items-center text-center gap-3 py-16 px-4">
@@ -838,35 +894,35 @@ const CopilotBar = ({ resolved, onAsk, onAutoFix }) => (
     className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-8 z-40 sm:max-w-xl rounded-full p-px shadow-xl ${resolved ? 'bg-secondary/40' : 'sp-slide bg-gradient-to-r from-primary via-secondary to-primary'}`}
     style={resolved ? undefined : { backgroundSize: '200% 100%' }}
   >
-  <div className="flex items-center gap-space-sm bg-surface-container-lowest/95 backdrop-blur-2xl px-space-md py-3 rounded-full">
-    <div className="relative shrink-0">
-      {!resolved && <span className="sp-orb absolute inset-0 rounded-full bg-tertiary/40" aria-hidden="true" />}
-      <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-tertiary via-secondary to-primary-container p-0.5 flex items-center justify-center">
-        <div className="w-full h-full bg-surface-container-lowest rounded-full flex items-center justify-center">
-          <Icon name="auto_awesome" className="text-sm text-tertiary" />
+    <div className="flex items-center gap-space-sm bg-surface-container-lowest/95 backdrop-blur-2xl px-space-md py-3 rounded-full">
+      <div className="relative shrink-0">
+        {!resolved && <span className="sp-orb absolute inset-0 rounded-full bg-tertiary/40" aria-hidden="true" />}
+        <div className="relative w-8 h-8 rounded-full bg-gradient-to-br from-tertiary via-secondary to-primary-container p-0.5 flex items-center justify-center">
+          <div className="w-full h-full bg-surface-container-lowest rounded-full flex items-center justify-center">
+            <Icon name="auto_awesome" className="text-sm text-tertiary" />
+          </div>
         </div>
       </div>
-    </div>
 
-    <button type="button" onClick={onAsk} disabled={resolved} className={`flex flex-col min-w-0 flex-1 text-left rounded-lg cursor-pointer disabled:cursor-default ${focusRing}`}>
-      <span className="text-sm font-semibold text-on-surface truncate">
-        {!resolved ? "Ask Copilot how to fix Marcus Chen's overbooking" : 'Sprint 14 is balanced. No allocation clashes.'}
-      </span>
-      <span className="font-mono text-xs text-outline truncate">
-        {!resolved ? 'Suggestion: split Hyperion client tasks with Sophia Patel' : 'Suggestion: watch W3 burn rate on Zero-Trust Access Control'}
-      </span>
-    </button>
-
-    {!resolved ? (
-      <button type="button" onClick={onAutoFix} className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-tertiary hover:bg-tertiary-fixed text-on-tertiary-fixed text-xs font-semibold transition-all shadow-md cursor-pointer active:scale-95 ${focusRing}`}>
-        <Icon name="bolt" className="text-xs" /> Auto-fix
+      <button type="button" onClick={onAsk} disabled={resolved} className={`flex flex-col min-w-0 flex-1 text-left rounded-lg cursor-pointer disabled:cursor-default ${focusRing}`}>
+        <span className="text-sm font-semibold text-on-surface truncate">
+          {!resolved ? "Ask Copilot how to fix Marcus Chen's overbooking" : 'Sprint 14 is balanced. No allocation clashes.'}
+        </span>
+        <span className="font-mono text-xs text-outline truncate">
+          {!resolved ? 'Suggestion: split Hyperion client tasks with Sophia Patel' : 'Suggestion: watch W3 burn rate on Zero-Trust Access Control'}
+        </span>
       </button>
-    ) : (
-      <span key="done" className="sp-pop shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-secondary text-on-secondary font-mono text-xs font-semibold shadow-md">
-        <Icon name="check" className="text-xs" /> Resolved
-      </span>
-    )}
-  </div>
+
+      {!resolved ? (
+        <button type="button" onClick={onAutoFix} className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-tertiary hover:bg-tertiary-fixed text-on-tertiary-fixed text-xs font-semibold transition-all shadow-md cursor-pointer active:scale-95 ${focusRing}`}>
+          <Icon name="bolt" className="text-xs" /> Auto-fix
+        </button>
+      ) : (
+        <span key="done" className="sp-pop shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-secondary text-on-secondary font-mono text-xs font-semibold shadow-md">
+          <Icon name="check" className="text-xs" /> Resolved
+        </span>
+      )}
+    </div>
   </div>
 );
 
@@ -890,6 +946,7 @@ export const SprintsPage = ({
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('default');
   const [milestoneOpen, setMilestoneOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false); // mobile only; the rail is always shown on large screens
   const [celebrate, setCelebrate] = useState(false);
   const toast = useToast();
   const searchRef = useRef(null);
@@ -899,7 +956,7 @@ export const SprintsPage = ({
   const rebalance = useCallback(() => {
     if (resolved) return;
     onResolveConflict?.();
-    toast.show('Done: 16h moved to Sophia Patel (bench). All allocations are now within capacity.');
+    toast.show("Done: Marcus's overflow moved to Sophia Patel (bench). All allocations are now within capacity.");
   }, [resolved, onResolveConflict, toast]);
 
   const closeMilestone = useCallback(() => setMilestoneOpen(false), []);
@@ -921,7 +978,7 @@ export const SprintsPage = ({
   useEffect(() => {
     const onKey = (e) => {
       const tag = document.activeElement?.tagName;
-      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -951,7 +1008,8 @@ export const SprintsPage = ({
     return list;
   }, [scoped, statusFilter, resolved, sort]);
 
-  const hasFilters = squad !== 'All squads' || statusFilter !== 'all' || query.trim() !== '';
+  const activeFilterCount = (squad !== 'All squads') + (statusFilter !== 'all') + (query.trim() !== '');
+  const hasFilters = activeFilterCount > 0;
   const clearFilters = () => { setSquad('All squads'); setStatusFilter('all'); setQuery(''); };
 
   const showDays = timespan === 'days';
@@ -969,35 +1027,48 @@ export const SprintsPage = ({
     <div className="sp-root relative isolate flex flex-col w-full max-w-[1400px] mx-auto pb-32">
       <style>{STYLES}</style>
 
-
+      {/* 1. Header */}
       <div className="pt-space-md mb-space-lg">
-        <PageHeader
-          resolved={resolved} celebrate={celebrate} onResolve={rebalance} onAllocate={onOpenAllocateModal}
-        />
+        <PageHeader resolved={resolved} celebrate={celebrate} onResolve={rebalance} onAllocate={onOpenAllocateModal} />
       </div>
 
+      {/* 2. Overview */}
       <div className="mb-space-xl">
-        <SectionTitle title="Sprint 14 overview" />
+        <SectionTitle title="Sprint 14 overview" hint="Updates live as allocations change" />
         <SummarySection resolved={resolved} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-space-lg items-start">
+      {/* 3. Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-x-space-lg gap-y-space-sm items-start">
         {/* Left rail: what to show */}
-        <aside aria-label="Filters" className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:p-1 lg:-m-1">
-          <FilterRail
-            squad={squad} onSquad={setSquad} status={statusFilter} onStatus={setStatusFilter}
-            counts={counts} hasFilters={hasFilters} onClear={clearFilters}
-          />
-        </aside>
+        <div className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:p-1 lg:-m-1">
+          <button
+            type="button" onClick={() => setFiltersOpen((o) => !o)} aria-expanded={filtersOpen} aria-controls="sp-filters"
+            className={`lg:hidden w-full flex items-center justify-between gap-2 rounded-xl border border-outline-variant/30 bg-surface-container/70 px-space-md py-2 text-sm font-semibold text-on-surface ${focusRing}`}
+          >
+            <span className="flex items-center gap-2">
+              <Icon name="tune" className="text-base text-primary" /> Filters
+              {hasFilters && <span className="rounded-full bg-primary-container text-on-primary-container px-1.5 text-xs">{activeFilterCount}</span>}
+            </span>
+            <Icon name="expand_more" className={`text-base text-outline transition-transform duration-300 ${filtersOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <aside id="sp-filters" aria-label="Filters" className={`${filtersOpen ? 'block mt-space-sm' : 'hidden'} lg:block`}>
+            <FilterRail
+              squad={squad} onSquad={setSquad} status={statusFilter} onStatus={setStatusFilter}
+              counts={counts} hasFilters={hasFilters} onClear={clearFilters}
+            />
+          </aside>
+        </div>
 
         {/* Board: one card per person */}
         <section aria-label="Allocation board" className="min-w-0">
           <SectionTitle title="Who is working on what" hint={`Showing ${visible.length} of ${PEOPLE.length} people`} />
           <p className="sr-only" aria-live="polite">Showing {visible.length} of {PEOPLE.length} people</p>
           <BoardToolbar query={query} onQuery={setQuery} searchRef={searchRef} timespan={timespan} onTimespan={setTimespan} sort={sort} onSort={setSort} />
+          <ActiveFilters squad={squad} status={statusFilter} query={query} onSquad={setSquad} onStatus={setStatusFilter} onQuery={setQuery} />
 
           {timespan === 'quarter' && (
-            <p className="sp-pop mb-3 text-sm text-on-surface-variant flex items-center gap-2" role="status">
+            <p className="sp-pop mt-space-sm text-sm text-on-surface-variant flex items-center gap-2" role="status">
               <Icon name="info" className="text-sm text-outline" />
               Quarter view isn&apos;t available yet. The board below still shows Sprint 14–16 by week.
             </p>

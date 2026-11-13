@@ -1,14 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /* ==========================================================================
-   TeamPage
+   TeamPage  (enhanced)
    --------------------------------------------------------------------------
-   1. Constants & filter rules   chips, sort options, status + score colors
-   2. Helpers & hooks            search matching, tween, toast
-   3. UI primitives              Icon, SpotlightCard, Avatar
-   4. Member card pieces         ScoreGauge, BadgePill, MemberCard, AddCard
-   5. Page sections              Header, Overview, Toolbar, SquadTray, Copilot
-   6. Page                       state + composition
+   Page layout, top to bottom:
+     1. Header      title, plain-language intro, export + verify actions
+     2. Overview    four headline numbers and a status split bar
+     3. Directory   search, filter chips, sort/group, squad tray, member cards
+     Optional       Copilot shortcut (hidden unless the app shell asks for it)
+
+   File layout:
+     1. Constants & filter rules
+     2. Helpers & hooks
+     3. UI primitives
+     4. Member card pieces
+     5. Page sections
+     6. Page
    ========================================================================== */
 
 /* ==========================================================================
@@ -25,35 +32,38 @@ const FILTERS = [
   { id: 'rust-go', label: 'Rust / Go', icon: 'memory', iconColor: 'text-tertiary', test: (m) => hasSkill(m, ['Go', 'Rust', 'gRPC']) },
   { id: 'webgl', label: 'Three.js / WebGL', icon: 'deployed_code', iconColor: 'text-secondary', test: (m) => hasSkill(m, ['WebSockets', 'Next.js', 'Tailwind']) || hasBadge(m, ['WebGL']) },
   { id: 'aws', label: 'AWS certified', icon: 'cloud_done', iconColor: 'text-primary', test: (m) => hasBadge(m, ['AWS', 'Cloud']) },
-  { id: 'high-score', label: 'High availability (90%+)', icon: 'verified', iconColor: 'text-secondary', test: (m) => m.availabilityScore >= 90 },
+  { id: 'high-score', label: 'Available (90%+)', icon: 'verified', iconColor: 'text-secondary', test: (m) => m.availabilityScore >= 90 },
   { id: 'bench', label: 'On bench', dot: 'bg-secondary-container', test: isBench },
 ];
 
 const SORTS = [
   { id: 'default', label: 'Default order' },
-  { id: 'score-desc', label: 'Highest availability' },
+  { id: 'score-desc', label: 'Most available' },
   { id: 'name', label: 'Name A–Z' },
 ];
 
 // Status colors (full class names so Tailwind can see them).
 const STATUS_TONES = {
-  leading: { dot: 'bg-tertiary', text: 'text-tertiary', pulse: true },
-  optimal: { dot: 'bg-primary', text: 'text-primary', pulse: false },
-  bench: { dot: 'bg-secondary', text: 'text-secondary', pulse: false },
+  leading: { dot: 'bg-tertiary', text: 'text-tertiary', pill: 'bg-tertiary/10 border-tertiary/30', pulse: true },
+  optimal: { dot: 'bg-primary', text: 'text-primary', pill: 'bg-primary/10 border-primary/30', pulse: false },
+  bench: { dot: 'bg-secondary', text: 'text-secondary', pill: 'bg-secondary/10 border-secondary/30', pulse: false },
 };
 const statusTone = (type) => STATUS_TONES[type] ?? STATUS_TONES.bench;
 
 const STATUS_LABELS = { leading: 'Leading', optimal: 'Optimal', bench: 'On bench' };
 const statusKey = (m) => (isBench(m) ? 'bench' : STATUS_TONES[m.statusType] ? m.statusType : 'bench');
 
-const scoreTone = (score) =>
+// Availability colors for the number and the bar.
+const scoreStyle = (score) =>
   score >= 95
-    ? 'text-secondary'
+    ? { text: 'text-secondary', bar: 'bg-secondary' }
     : score >= 90
-      ? 'text-primary'
-      : 'text-tertiary';
+      ? { text: 'text-primary', bar: 'bg-primary' }
+      : { text: 'text-tertiary', bar: 'bg-tertiary' };
 
 const HIGHLIGHT_SKILLS = ['WebSockets', 'Go', 'CUDA', 'Rust', 'Redis'];
+const MAX_SKILLS = 6;
+const MAX_BADGES = 3;
 
 const COPILOT_DEFAULT = 'Recommend a 3-person squad for High-Throughput Streaming Engine';
 
@@ -129,10 +139,6 @@ const Icon = ({ name, className = '' }) => (
   <span className={`material-symbols-outlined ${className}`} aria-hidden="true">{name}</span>
 );
 
-const SpotlightCard = ({ as: Tag = 'div', className = '', style, children, ...rest }) => (
-  <Tag style={style} className={`relative ${className}`} {...rest}>{children}</Tag>
-);
-
 const Avatar = ({ src, name, className = '' }) => {
   const [failed, setFailed] = useState(false);
   if (failed || !src) {
@@ -145,28 +151,38 @@ const Avatar = ({ src, name, className = '' }) => {
   return <img src={src} alt={name} loading="lazy" onError={() => setFailed(true)} className={`object-cover ring-1 ring-outline-variant/40 ${className}`} />;
 };
 
+const StatusPill = ({ type, text }) => {
+  const tone = statusTone(type);
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-medium whitespace-nowrap ${tone.pill} ${tone.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${tone.dot} ${tone.pulse ? 'animate-pulse' : ''}`} aria-hidden="true" />
+      {text}
+    </span>
+  );
+};
+
 /* ==========================================================================
    4. MEMBER CARD PIECES
    ========================================================================== */
 
-const ScoreGauge = ({ score }) => {
+// Availability as a labelled bar: easier to scan across many cards than a ring.
+const AvailabilityMeter = ({ score }) => {
   const shown = useTween(score);
-  const circ = 2 * Math.PI * 19;
+  const s = scoreStyle(score);
   return (
-    <div className="relative w-12 h-12 flex items-center justify-center shrink-0" role="img" aria-label={`Availability score ${score} percent`}>
-      <svg className="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
-        <circle className="text-surface-container-highest" cx="24" cy="24" r="19" fill="none" stroke="currentColor" strokeWidth="3" />
-        <circle
-          className={scoreTone(score)} cx="24" cy="24" r="19" fill="none" stroke="currentColor"
-          strokeDasharray={circ} strokeDashoffset={circ * (1 - shown / 100)} strokeLinecap="round" strokeWidth="3"
-        />
-      </svg>
-      <span className="absolute font-mono text-sm font-semibold text-on-surface tabular-nums">{Math.round(shown)}%</span>
+    <div>
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-on-surface-variant">Availability</span>
+        <span className={`font-mono font-semibold tabular-nums ${s.text}`}>{Math.round(shown)}%</span>
+      </div>
+      <div className="mt-1 h-1.5 w-full rounded-full bg-surface-container-highest overflow-hidden" role="progressbar" aria-label="Availability" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`h-full rounded-full transition-[width] duration-700 ease-out ${s.bar}`} style={{ width: `${Math.min(shown, 100)}%` }} />
+      </div>
     </div>
   );
 };
 
-// A merit badge. The proof popover opens on hover and on keyboard focus.
+// A verified badge. The proof popover opens on hover and on keyboard focus.
 const BadgePill = ({ badge, popId }) => (
   <div className="group/pop relative">
     <button
@@ -193,125 +209,125 @@ const BadgePill = ({ badge, popId }) => (
 );
 
 const MemberCard = ({ member, index, query, inSquad, onToggleSquad, onInspect }) => {
-  const tone = statusTone(member.statusType);
   const q = query.trim().toLowerCase();
+  const skills = member.skills ?? [];
+  const badges = member.meritBadges ?? [];
   return (
-    <SpotlightCard
+    <article
       style={{ animationDelay: `${Math.min(index, 8) * 60}ms` }}
-      className="tm-enter group rounded-2xl bg-surface-container-low/70 backdrop-blur-xl p-space-lg flex flex-col justify-between gap-space-md shadow-lg hover:shadow-2xl hover:shadow-primary/10 hover:-translate-y-1 hover:z-20 focus-within:z-20 transition-all duration-300 border border-outline-variant/20 hover:border-primary/30"
+      className={`tm-enter group relative rounded-2xl backdrop-blur-xl p-space-lg flex flex-col gap-space-md shadow-md hover:shadow-xl hover:-translate-y-0.5 hover:z-20 focus-within:z-20 transition-all duration-300 border ${
+        inSquad ? 'bg-secondary/[0.06] border-secondary/50' : 'bg-surface-container-low/70 border-outline-variant/20 hover:border-primary/30'
+      }`}
     >
-      <div className="relative flex flex-col gap-space-md">
-        {/* Who */}
-        <div className="flex items-start justify-between gap-space-sm">
-          <div className="flex items-center gap-space-sm min-w-0">
-            <div className="relative shrink-0">
-              <Avatar src={member.avatar} name={member.name} className="w-14 h-14 rounded-xl shadow-md transition-transform duration-300 group-hover:scale-105" />
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-surface flex items-center justify-center">
-                <span className={`w-2.5 h-2.5 rounded-full ${tone.dot}`} />
-              </span>
-            </div>
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-lg font-semibold text-on-surface truncate">{member.name}</h3>
-                {member.verified && <Icon name="verified" className="text-secondary text-sm shrink-0" />}
-                {member.verified && <span className="sr-only">Identity verified</span>}
-              </div>
-              <span className="text-sm text-on-surface-variant font-medium truncate">{member.role}</span>
-            </div>
+      {/* Who they are */}
+      <div className="flex items-center gap-space-sm min-w-0">
+        <Avatar src={member.avatar} name={member.name} className="w-14 h-14 rounded-xl shadow-md shrink-0" />
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-lg font-semibold text-on-surface truncate">{member.name}</h3>
+            {member.verified && <Icon name="verified" className="text-secondary text-sm shrink-0" />}
+            {member.verified && <span className="sr-only">Identity verified</span>}
           </div>
-          <ScoreGauge score={member.availabilityScore} />
+          <span className="text-sm text-on-surface-variant truncate">{member.role}</span>
         </div>
-
-        {/* Audit status */}
-        <div className="flex items-center justify-between gap-2 py-1.5 px-space-sm rounded-lg bg-surface-container/60 border border-outline-variant/10">
-          <span className="text-xs text-on-surface-variant">Sandbox audit</span>
-          <span className={`font-mono text-xs flex items-center gap-1.5 font-medium ${tone.text}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${tone.dot} ${tone.pulse ? 'animate-pulse' : ''}`} />
-            {member.statusText}
-          </span>
-        </div>
-
-        {/* Badges */}
-        {(member.meritBadges ?? []).length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-on-surface-variant">Verified badges</span>
-            <div className="flex flex-wrap gap-1.5 items-center">
-              {member.meritBadges.map((b, i) => <BadgePill key={i} badge={b} popId={`pop-${member.id}-${i}`} />)}
-            </div>
-          </div>
-        )}
       </div>
 
-      <div className="relative">
-        {/* Skills (matching the search are highlighted) */}
-        <div className="flex flex-wrap gap-1 mb-space-md">
-          {(member.skills ?? []).slice(0, 6).map((skill) => {
-            const hit = q && skill.toLowerCase().includes(q);
-            return (
-              <span
-                key={skill}
-                className={`px-2 py-0.5 rounded-full font-mono text-xs transition-colors ${
-                  hit
-                    ? 'bg-secondary text-on-secondary font-semibold'
-                    : HIGHLIGHT_SKILLS.includes(skill)
-                      ? 'bg-surface-container-highest text-secondary'
-                      : 'bg-surface-container-highest/80 text-on-surface-variant'
-                }`}
-              >
-                {skill}
-              </span>
-            );
-          })}
-          {(member.skills ?? []).length > 6 && (
-            <span className="px-2 py-0.5 rounded-full text-xs bg-surface-container-highest/80 text-on-surface-variant" title={(member.skills ?? []).slice(6).join(', ')}>
-              +{member.skills.length - 6}
-            </span>
-          )}
+      {/* Where they stand */}
+      <div className="flex flex-col gap-space-sm">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-on-surface-variant">Skill check</span>
+          <StatusPill type={member.statusType} text={member.statusText} />
         </div>
-
-        <div className="flex items-center justify-between pt-space-sm border-t border-outline-variant/10">
-          <button type="button" onClick={() => onInspect?.(member)} className={`group/link text-secondary hover:text-secondary-fixed-dim text-sm font-semibold flex items-center gap-1 transition-colors cursor-pointer rounded ${focusRing}`}>
-            <span>Inspect sandbox</span>
-            <Icon name="arrow_forward" className="text-sm transition-transform duration-200 group-hover/link:translate-x-1" />
-          </button>
-          <button
-            type="button" onClick={() => onToggleSquad(member)} aria-pressed={inSquad}
-            aria-label={inSquad ? `Remove ${member.name} from squad` : `Add ${member.name} to squad`}
-            title={inSquad ? 'In your squad. Click to remove' : 'Add to squad'}
-            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-semibold transition-all active:scale-90 cursor-pointer ${focusRing} ${inSquad ? 'bg-secondary text-on-secondary' : 'hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface'}`}
-          >
-            <Icon name={inSquad ? 'check' : 'person_add'} className="text-lg" />
-            {inSquad && <span className="tm-pop">In squad</span>}
-          </button>
-        </div>
+        <AvailabilityMeter score={member.availabilityScore} />
       </div>
-    </SpotlightCard>
+
+      {/* Skills (matches for the search are highlighted) */}
+      {skills.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-on-surface-variant">Skills</span>
+          <div className="flex flex-wrap gap-1">
+            {skills.slice(0, MAX_SKILLS).map((skill) => {
+              const hit = q && skill.toLowerCase().includes(q);
+              return (
+                <span
+                  key={skill}
+                  className={`px-2 py-0.5 rounded-full font-mono text-xs transition-colors ${
+                    hit
+                      ? 'bg-secondary text-on-secondary font-semibold'
+                      : HIGHLIGHT_SKILLS.includes(skill)
+                        ? 'bg-surface-container-highest text-secondary'
+                        : 'bg-surface-container-highest/80 text-on-surface-variant'
+                  }`}
+                >
+                  {skill}
+                </span>
+              );
+            })}
+            {skills.length > MAX_SKILLS && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-surface-container-highest/80 text-on-surface-variant" title={skills.slice(MAX_SKILLS).join(', ')}>
+                +{skills.length - MAX_SKILLS}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Verified badges */}
+      {badges.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-on-surface-variant">Verified badges</span>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {badges.slice(0, MAX_BADGES).map((b, i) => <BadgePill key={i} badge={b} popId={`pop-${member.id}-${i}`} />)}
+            {badges.length > MAX_BADGES && (
+              <span className="font-mono text-xs text-on-surface-variant" title={badges.slice(MAX_BADGES).map((b) => b.title).join(', ')}>
+                +{badges.length - MAX_BADGES} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="mt-auto flex items-center justify-between gap-2 pt-space-sm border-t border-outline-variant/10">
+        <button type="button" onClick={() => onInspect?.(member)} className={`group/link text-secondary hover:text-secondary-fixed-dim text-sm font-semibold flex items-center gap-1 transition-colors cursor-pointer rounded ${focusRing}`}>
+          <span>View profile</span>
+          <Icon name="arrow_forward" className="text-sm transition-transform duration-200 group-hover/link:translate-x-1" />
+        </button>
+        <button
+          type="button" onClick={() => onToggleSquad(member)} aria-pressed={inSquad}
+          aria-label={inSquad ? `Remove ${member.name} from squad` : `Add ${member.name} to squad`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all active:scale-95 cursor-pointer border ${focusRing} ${
+            inSquad
+              ? 'bg-secondary text-on-secondary border-secondary'
+              : 'border-outline-variant/40 text-on-surface hover:bg-surface-container-high hover:border-secondary/50'
+          }`}
+        >
+          <Icon name={inSquad ? 'check' : 'person_add'} className="text-base" />
+          <span>{inSquad ? 'In squad' : 'Add to squad'}</span>
+        </button>
+      </div>
+    </article>
   );
 };
 
 const AddCard = ({ onClick, index }) => (
   <button
     type="button" onClick={onClick} style={{ animationDelay: `${Math.min(index, 8) * 60}ms` }}
-    className={`tm-enter group relative rounded-2xl bg-surface-container-lowest/60 backdrop-blur-xl p-space-lg flex flex-col justify-between items-center text-center shadow-lg hover:shadow-2xl hover:bg-surface-container-low hover:-translate-y-1 transition-all duration-300 cursor-pointer border border-dashed border-outline-variant/40 hover:border-secondary/60 min-h-[360px] ${focusRing}`}
+    className={`tm-enter group relative rounded-2xl bg-surface-container-lowest/60 backdrop-blur-xl p-space-lg flex flex-col items-center justify-center text-center gap-space-sm shadow-md hover:shadow-xl hover:bg-surface-container-low hover:-translate-y-0.5 transition-all duration-300 cursor-pointer border border-dashed border-outline-variant/40 hover:border-secondary/60 min-h-[320px] ${focusRing}`}
   >
-    <div className="w-full flex justify-end">
-      <span className="px-space-xs py-0.5 rounded bg-secondary-container/20 text-secondary font-mono text-xs font-semibold">AI match</span>
-    </div>
-    <div className="flex flex-col items-center justify-center my-auto py-space-lg">
-      <div className="w-16 h-16 rounded-2xl bg-primary-container/10 group-hover:bg-primary-container/25 group-hover:scale-110 group-hover:-rotate-3 flex items-center justify-center mb-space-md text-primary transition-all duration-300 shadow-inner">
-        <Icon name="group_add" className="text-3xl" />
-      </div>
-      <h3 className="text-lg font-semibold text-on-surface mb-1">Add a team member</h3>
-      <p className="text-sm text-on-surface-variant max-w-xs mb-space-lg leading-relaxed">
-        Onboard someone from your company, or let AI find a contractor whose skills are verified in a sandbox.
-      </p>
-      <span className="flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-surface-container-high group-hover:bg-surface-container-highest text-on-surface text-sm font-semibold shadow-sm transition-all border border-outline-variant/30">
-        <Icon name="bolt" className="text-lg text-secondary" /> Find a match now
-      </span>
-    </div>
-    <div className="w-full pt-space-xs text-outline font-mono text-xs flex items-center justify-center gap-1">
-      <Icon name="lock" className="text-xs" /> Skills proven with zero-knowledge verification
-    </div>
+    <span className="w-14 h-14 rounded-2xl bg-primary-container/10 group-hover:bg-primary-container/25 group-hover:scale-105 flex items-center justify-center text-primary transition-all duration-300">
+      <Icon name="group_add" className="text-3xl" />
+    </span>
+    <h3 className="text-lg font-semibold text-on-surface">Add a team member</h3>
+    <p className="text-sm text-on-surface-variant max-w-xs leading-relaxed">
+      Invite someone from your company, or find a contractor with verified skills.
+    </p>
+    <span className="mt-1 flex items-center gap-1.5 px-space-md py-space-sm rounded-xl bg-surface-container-high group-hover:bg-surface-container-highest text-on-surface text-sm font-semibold border border-outline-variant/30 transition-colors">
+      <Icon name="add" className="text-lg text-secondary" /> Add member
+    </span>
+    <span className="mt-2 text-outline font-mono text-xs flex items-center gap-1">
+      <Icon name="lock" className="text-xs" /> Skills are verified before they appear here
+    </span>
   </button>
 );
 
@@ -320,45 +336,38 @@ const AddCard = ({ onClick, index }) => (
    ========================================================================== */
 
 const PageHeader = ({ onExport, onVerify }) => (
-  <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-space-lg mb-space-xl pt-space-md">
+  <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-space-lg mb-space-xl pt-space-md">
     <div className="flex flex-col gap-2">
       <p className="flex items-center gap-1.5 text-sm font-medium text-secondary">
-        <span className="material-symbols-outlined" style={{fontSize:'16px'}} aria-hidden="true">hub</span>
+        <Icon name="hub" className="text-base" />
         People &amp; credentials
       </p>
-      <h1
-        className="font-semibold text-on-surface"
-        style={{
-          fontSize: 'clamp(1.75rem, 3vw, 2.25rem)',
-          letterSpacing: '-0.025em',
-          lineHeight: '1.15',
-        }}
-      >
+      <h1 className="font-semibold text-on-surface" style={{ fontSize: 'clamp(1.75rem, 3vw, 2.25rem)', letterSpacing: '-0.025em', lineHeight: 1.15 }}>
         Team &amp; skills
       </h1>
       <p className="text-sm text-on-surface-variant max-w-xl leading-relaxed">
-        Find verified people, check their sandbox audit status, and build a squad.
+        Browse your team, check who is available and what they are verified for, and pick people for a squad.
       </p>
     </div>
     <div className="flex items-center gap-space-sm flex-wrap">
-      <button type="button" onClick={onExport} className={`flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-surface-container-high/80 hover:bg-surface-container-highest text-on-surface text-sm font-medium backdrop-blur-md shadow-sm transition-all border border-outline-variant/20 hover:border-secondary/50 active:scale-95 cursor-pointer ${focusRing}`}>
-        <Icon name="file_download" className="text-lg text-secondary" /> Export audit report
+      <button type="button" onClick={onExport} className={`flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-surface-container-high/80 hover:bg-surface-container-highest text-on-surface text-sm font-medium shadow-sm transition-all border border-outline-variant/20 hover:border-secondary/50 active:scale-95 cursor-pointer ${focusRing}`}>
+        <Icon name="file_download" className="text-lg text-secondary" /> Export report
       </button>
-      <button type="button" onClick={onVerify} className={`group flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-gradient-to-r from-primary to-primary-container text-on-primary text-sm font-semibold shadow-lg shadow-primary-container/20 hover:shadow-primary-container/40 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 transition-all cursor-pointer ${focusRing}`}>
-        <Icon name="verified_user" className="text-lg transition-transform duration-300 group-hover:scale-110" /> Verify a credential
+      <button type="button" onClick={onVerify} className={`group flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-primary hover:bg-primary-fixed-dim text-on-primary text-sm font-semibold shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:scale-95 transition-all cursor-pointer ${focusRing}`}>
+        <Icon name="verified_user" className="text-lg" /> Verify a credential
       </button>
     </div>
-  </div>
+  </header>
 );
 
 const StatCard = ({ label, value, suffix = '', icon, tone, delay }) => {
   const shown = useTween(value, 800);
   return (
-    <SpotlightCard
+    <div
       style={{ animationDelay: `${delay}ms` }}
       className="tm-enter rounded-2xl bg-surface-container/70 backdrop-blur-xl border border-outline-variant/30 p-space-md shadow-md hover:border-secondary/40 hover:-translate-y-0.5 transition-all duration-300"
     >
-      <div className="relative flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col">
           <span className="text-xs text-on-surface-variant">{label}</span>
           <span className={`text-3xl font-semibold tabular-nums leading-tight ${tone}`}>{Math.round(shown)}{suffix}</span>
@@ -367,7 +376,7 @@ const StatCard = ({ label, value, suffix = '', icon, tone, delay }) => {
           <Icon name={icon} />
         </div>
       </div>
-    </SpotlightCard>
+    </div>
   );
 };
 
@@ -408,13 +417,13 @@ const Overview = ({ members }) => {
 };
 
 const Toolbar = ({ query, onQuery, searchRef, active, onActive, counts, sort, onSort, shown, total, hasFilters, onClear, onAskCopilot, grouped, onGrouped }) => (
-  <div className="bg-surface-container-low/70 backdrop-blur-2xl rounded-2xl p-space-lg mb-space-lg shadow-xl border border-outline-variant/30 flex flex-col gap-space-md">
+  <div className="bg-surface-container-low/70 backdrop-blur-2xl rounded-2xl p-space-md sm:p-space-lg mb-space-lg shadow-lg border border-outline-variant/30 flex flex-col gap-space-md">
     <div className="relative w-full flex items-center">
       <Icon name="search" className="absolute left-space-md text-lg text-secondary pointer-events-none" />
       <input
         ref={searchRef} type="text" aria-label="Search people" value={query}
         onChange={(e) => onQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && onQuery('')}
-        placeholder="Search by name, role, skill or badge (for example: WebSockets)"
+        placeholder="Search by name, role, skill or badge"
         className="w-full pl-12 pr-14 py-space-md rounded-xl bg-surface-container-lowest/80 text-on-surface placeholder:text-outline text-base shadow-inner border border-outline-variant/20 transition-all focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
       />
       {query ? (
@@ -435,7 +444,7 @@ const Toolbar = ({ query, onQuery, searchRef, active, onActive, counts, sort, on
             className={`flex items-center gap-1.5 px-space-md py-1.5 rounded-full font-mono text-sm whitespace-nowrap transition-all cursor-pointer active:scale-95 ${focusRing} ${on ? 'bg-secondary text-on-secondary font-semibold' : 'bg-surface-container-high/80 hover:bg-surface-container-highest text-on-surface border border-outline-variant/20'}`}
           >
             {chip.icon && <Icon name={chip.icon} className={`text-sm ${on ? 'text-on-secondary' : chip.iconColor}`} />}
-            {chip.dot && <span className={`w-2 h-2 rounded-full ${chip.dot}`} />}
+            {chip.dot && <span className={`w-2 h-2 rounded-full ${chip.dot}`} aria-hidden="true" />}
             <span>{chip.label}</span>
             <span className={`rounded-full px-1.5 text-xs tabular-nums ${on ? 'bg-on-secondary/15' : 'bg-surface-container-highest'}`}>{counts[chip.id]}</span>
           </button>
@@ -444,30 +453,31 @@ const Toolbar = ({ query, onQuery, searchRef, active, onActive, counts, sort, on
     </div>
 
     <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-outline">
-      <span aria-live="polite">
-        Showing {shown} of {total} people
-        {hasFilters && <button type="button" onClick={onClear} className={`ml-3 text-primary hover:underline rounded ${focusRing}`}>Clear filters</button>}
-        {query.trim() && <button type="button" onClick={onAskCopilot} className={`ml-3 text-tertiary hover:underline rounded ${focusRing}`}>Not finding them? Ask Copilot</button>}
+      <span aria-live="polite" className="flex flex-wrap items-center gap-x-3">
+        <span>Showing {shown} of {total} people</span>
+        {hasFilters && <button type="button" onClick={onClear} className={`text-primary hover:underline rounded ${focusRing}`}>Clear filters</button>}
+        {query.trim() && shown === 0 && <button type="button" onClick={onAskCopilot} className={`text-tertiary hover:underline rounded ${focusRing}`}>Not finding them? Try Copilot</button>}
       </span>
       <div className="flex items-center gap-space-sm">
-      <button type="button" aria-pressed={grouped} onClick={() => onGrouped(!grouped)} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer active:scale-95 ${focusRing} ${grouped ? 'bg-secondary text-on-secondary' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'}`}>
-        <Icon name="view_agenda" className="text-sm" /> Group by status
-      </button>
-      <label className="flex items-center gap-2">
-        Sort by
-        <select value={sort} onChange={(e) => onSort(e.target.value)} className="rounded-lg bg-surface-container-lowest/80 border border-outline-variant/30 px-2 py-1 text-on-surface cursor-pointer focus:outline-none focus:ring-2 focus:ring-secondary">
-          {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
-      </label>
+        <button type="button" aria-pressed={grouped} onClick={() => onGrouped(!grouped)} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer active:scale-95 ${focusRing} ${grouped ? 'bg-secondary text-on-secondary' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'}`}>
+          <Icon name="view_agenda" className="text-sm" /> Group by status
+        </button>
+        <label className="flex items-center gap-2">
+          Sort by
+          <select value={sort} onChange={(e) => onSort(e.target.value)} className="rounded-lg bg-surface-container-lowest/80 border border-outline-variant/30 px-2 py-1 text-on-surface cursor-pointer focus:outline-none focus:ring-2 focus:ring-secondary">
+            {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </label>
       </div>
     </div>
   </div>
 );
 
-const SquadTray = ({ squad, onRemove, onClear, onReview }) => (
-  <div className="tm-pop mb-space-lg flex flex-wrap items-center justify-between gap-3 px-space-md py-3 rounded-2xl bg-secondary/[0.07] border border-secondary/30 backdrop-blur-xl">
+// Sticks to the top while the squad is being built, so it stays in view as you scroll the cards.
+const SquadTray = ({ squad, onRemove, onClear, onReview, showCopilot }) => (
+  <div className="tm-pop sticky top-3 z-30 mb-space-lg flex flex-wrap items-center justify-between gap-3 px-space-md py-3 rounded-2xl bg-surface-container-lowest/90 border border-secondary/40 backdrop-blur-xl shadow-lg">
     <div className="flex items-center gap-3 min-w-0">
-      <span className="font-mono text-xs text-secondary font-semibold whitespace-nowrap">Your squad ({squad.length})</span>
+      <span className="text-sm font-semibold text-on-surface whitespace-nowrap">Your squad <span className="text-secondary tabular-nums">({squad.length})</span></span>
       <div className="flex items-center -space-x-2">
         {squad.map((m) => (
           <button key={m.id} type="button" onClick={() => onRemove(m)} title={`Remove ${m.name}`} aria-label={`Remove ${m.name} from squad`} className={`rounded-full ring-2 ring-surface transition-transform hover:-translate-y-1 hover:z-10 ${focusRing}`}>
@@ -477,11 +487,22 @@ const SquadTray = ({ squad, onRemove, onClear, onReview }) => (
       </div>
     </div>
     <div className="flex items-center gap-space-sm">
-      <button type="button" onClick={onClear} className={`font-mono text-xs text-outline hover:text-on-surface rounded ${focusRing}`}>Clear</button>
-      <button type="button" onClick={onReview} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tertiary hover:bg-tertiary-fixed text-on-tertiary-fixed text-sm font-semibold transition-all active:scale-95 cursor-pointer ${focusRing}`}>
-        <Icon name="auto_awesome" className="text-sm" /> Ask Copilot to review
-      </button>
+      <button type="button" onClick={onClear} className={`text-sm text-on-surface-variant hover:text-on-surface rounded ${focusRing}`}>Clear squad</button>
+      {showCopilot && (
+        <button type="button" onClick={onReview} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant/40 text-on-surface hover:bg-surface-container-high text-sm font-medium transition-all active:scale-95 cursor-pointer ${focusRing}`}>
+          <Icon name="auto_awesome" className="text-sm text-tertiary" /> Get feedback
+        </button>
+      )}
     </div>
+  </div>
+);
+
+const SectionHeading = ({ title, count, dot }) => (
+  <div className="flex items-center gap-2 mb-space-md">
+    {dot && <span className={`w-2.5 h-2.5 rounded-full ${dot}`} aria-hidden="true" />}
+    <h2 className="text-lg font-semibold text-on-surface">{title}</h2>
+    <span className="text-xs tabular-nums rounded-full px-2 py-0.5 bg-surface-container-highest text-on-surface-variant">{count}</span>
+    <div className="flex-1 h-px bg-outline-variant/20 ml-2" />
   </div>
 );
 
@@ -491,9 +512,9 @@ const EmptyState = ({ onClear, onAskCopilot, hasQuery }) => (
     <h3 className="text-lg font-semibold text-on-surface">No one matches yet</h3>
     <p className="text-sm text-on-surface-variant max-w-sm">Try a different keyword or filter, or clear everything to see the whole team.</p>
     <div className="flex flex-wrap justify-center gap-2 mt-1">
-      <button type="button" onClick={onClear} className={`px-space-md py-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-sm font-semibold border border-outline-variant/30 active:scale-95 transition ${focusRing}`}>Clear filters</button>
+      <button type="button" onClick={onClear} className={`px-space-md py-2 rounded-xl bg-primary text-on-primary text-sm font-semibold active:scale-95 transition ${focusRing}`}>Clear filters</button>
       {hasQuery && (
-        <button type="button" onClick={onAskCopilot} className={`px-space-md py-2 rounded-xl bg-tertiary text-on-tertiary-fixed text-sm font-semibold active:scale-95 transition ${focusRing}`}>Ask Copilot to find them</button>
+        <button type="button" onClick={onAskCopilot} className={`px-space-md py-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-sm font-semibold border border-outline-variant/30 active:scale-95 transition ${focusRing}`}>Try Copilot search</button>
       )}
     </div>
   </div>
@@ -513,7 +534,7 @@ const Toast = ({ message, onDismiss }) => (
 
 const CopilotBar = ({ prompt, label, onAsk }) => (
   <div className="fixed bottom-6 left-0 right-0 px-gutter z-30 pointer-events-none flex justify-center">
-    <div className="w-full max-w-3xl pointer-events-auto bg-surface-container-lowest/90 backdrop-blur-2xl p-space-sm pl-space-md rounded-2xl shadow-2xl border border-outline-variant/40 flex items-center justify-between gap-space-md transition-shadow hover:shadow-[0_0_28px_rgba(183,109,255,0.25)]">
+    <div className="w-full max-w-3xl pointer-events-auto bg-surface-container-lowest/90 backdrop-blur-2xl p-space-sm pl-space-md rounded-2xl shadow-2xl border border-outline-variant/40 flex items-center justify-between gap-space-md">
       <button type="button" onClick={() => onAsk(prompt)} className={`flex items-center gap-space-sm flex-1 min-w-0 text-left rounded-lg cursor-pointer ${focusRing}`}>
         <span className="w-8 h-8 rounded-lg bg-tertiary-container/20 flex items-center justify-center text-tertiary shrink-0">
           <Icon name="magic_button" className="text-lg" />
@@ -522,7 +543,7 @@ const CopilotBar = ({ prompt, label, onAsk }) => (
       </button>
       <div className="flex items-center gap-space-xs">
         <span className="hidden sm:inline font-mono text-xs text-outline">Ctrl/⌘ + Enter</span>
-        <button type="button" onClick={() => onAsk(prompt)} aria-label="Send to Copilot" className={`w-10 h-10 rounded-xl bg-gradient-to-r from-primary to-secondary text-on-primary flex items-center justify-center shadow-lg shadow-secondary/20 hover:shadow-secondary/40 hover:-translate-y-0.5 active:scale-90 transition-all cursor-pointer ${focusRing}`}>
+        <button type="button" onClick={() => onAsk(prompt)} aria-label="Send to Copilot" className={`w-10 h-10 rounded-xl bg-primary text-on-primary flex items-center justify-center shadow-md hover:-translate-y-0.5 active:scale-90 transition-all cursor-pointer ${focusRing}`}>
           <Icon name="arrow_upward" className="text-lg" />
         </button>
       </div>
@@ -551,6 +572,7 @@ export const TeamPage = ({
   const toast = useToast();
 
   const ask = useCallback((text) => onAskCopilotQuery?.(text), [onAskCopilotQuery]);
+  const copilotOn = !!onAskCopilotQuery;
 
   /* --- filtering, counts, sorting --- */
   const q = query.trim().toLowerCase();
@@ -575,7 +597,6 @@ export const TeamPage = ({
       .map((k) => ({ key: k, title: STATUS_LABELS[k], items: visible.filter((m) => statusKey(m) === k) }))
       .filter((x) => x.items.length);
   }, [visible, grouped]);
-  let running = 0;
 
   const hasFilters = activeTag !== 'all' || q !== '';
   const clearFilters = () => { setActiveTag('all'); setQuery(''); };
@@ -598,7 +619,7 @@ export const TeamPage = ({
   const copilotPrompt = squad.length ? `Review this squad: ${squad.map((m) => m.name).join(', ')}` : COPILOT_DEFAULT;
   const copilotLabel = squad.length ? `Ask Copilot to review your squad of ${squad.length}` : `Ask Copilot: ${COPILOT_DEFAULT}`;
 
-  /* --- keyboard: "/" focuses search, Ctrl/Cmd+Enter asks Copilot --- */
+  /* --- keyboard: "/" focuses search, Ctrl/Cmd+Enter asks Copilot (only when Copilot is wired up) --- */
   useEffect(() => {
     const onKey = (e) => {
       const tag = document.activeElement?.tagName;
@@ -606,14 +627,16 @@ export const TeamPage = ({
         e.preventDefault();
         searchRef.current?.focus();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (copilotOn && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         ask(copilotPrompt);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ask, copilotPrompt]);
+  }, [ask, copilotPrompt, copilotOn]);
+
+  let running = 0;
 
   return (
     <div className="tm-root max-w-7xl mx-auto relative isolate flex flex-col w-full pb-32">
@@ -631,14 +654,16 @@ export const TeamPage = ({
         }
       `}</style>
 
-
+      {/* 1. Header */}
       <PageHeader
         onExport={() => toast.show('Exporting the signed audit report (PDF and JSON)…')}
         onVerify={onOpenVerifyModal}
       />
 
+      {/* 2. Overview */}
       <Overview members={teamMembers} />
 
+      {/* 3. Directory */}
       <section aria-label="Team directory">
         <Toolbar
           query={query} onQuery={setQuery} searchRef={searchRef}
@@ -650,7 +675,7 @@ export const TeamPage = ({
         />
 
         {squad.length > 0 && (
-          <SquadTray squad={squad} onRemove={toggleSquad} onClear={() => setSquadIds([])} onReview={reviewSquad} />
+          <SquadTray squad={squad} onRemove={toggleSquad} onClear={() => setSquadIds([])} onReview={reviewSquad} showCopilot={copilotOn} />
         )}
 
         {visible.length > 0 || !hasFilters ? (
@@ -660,14 +685,7 @@ export const TeamPage = ({
               running += sec.items.length;
               return (
                 <div key={sec.key}>
-                  {sec.title && (
-                    <div className="flex items-center gap-2 mb-space-md">
-                      <span className={`w-2.5 h-2.5 rounded-full ${STATUS_TONES[sec.key].dot}`} aria-hidden="true" />
-                      <h2 className="text-lg font-semibold text-on-surface">{sec.title}</h2>
-                      <span className="text-xs tabular-nums rounded-full px-2 py-0.5 bg-surface-container-highest text-on-surface-variant">{sec.items.length}</span>
-                      <div className="flex-1 h-px bg-outline-variant/20 ml-2" />
-                    </div>
-                  )}
+                  {sec.title && <SectionHeading title={sec.title} count={sec.items.length} dot={STATUS_TONES[sec.key].dot} />}
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-lg">
                     {sec.items.map((m, i) => (
                       <MemberCard
@@ -687,7 +705,7 @@ export const TeamPage = ({
             )}
           </div>
         ) : (
-          <EmptyState onClear={clearFilters} onAskCopilot={askToFind} hasQuery={q !== ''} />
+          <EmptyState onClear={clearFilters} onAskCopilot={askToFind} hasQuery={q !== '' && copilotOn} />
         )}
       </section>
 

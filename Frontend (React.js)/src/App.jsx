@@ -20,12 +20,24 @@ import {
   INITIAL_TEAM_MEMBERS,
   INITIAL_ALLOCATIONS,
 } from './data/mockData';
+import { applyTheme, loadTheme, resolveMode, saveTheme, systemPrefersDark } from './theme';
 
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [isDarkMode, setIsDarkMode] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [tpuUsage, setTpuUsage] = useState(78);
+
+  // Theme: `themePrefs` is what is saved, `themePreview` is the unsaved draft from Settings.
+  const [themePrefs, setThemePrefs] = useState(() => {
+    const loaded = loadTheme();
+    // Persist the initial theme (applies THEME_DEFAULTS if nothing was stored yet).
+    saveTheme(loaded);
+    return loaded;
+  });
+  const [themePreview, setThemePreview] = useState(null);
+  const [systemDark, setSystemDark] = useState(systemPrefersDark);
+  const activeTheme = themePreview ?? themePrefs;
+  const isDarkMode = resolveMode(activeTheme.theme, systemDark) === 'dark';
 
   // Data States
   const [projects, setProjects] = useState(INITIAL_PROJECTS);
@@ -40,18 +52,31 @@ export default function App() {
   const [isGenerateSprintOpen, setIsGenerateSprintOpen] = useState(false);
   const [inspectingMember, setInspectingMember] = useState(null);
 
-  // Handle theme class on <html>
+  // Follow the device's light/dark setting (used when the mode is "System").
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (e) => setSystemDark(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
 
-  // Toggle Theme
+  // Apply the theme (dark class plus the chosen color palette) to <html>.
+  useEffect(() => {
+    applyTheme(activeTheme, systemDark);
+  }, [activeTheme, systemDark]);
+
+  // Header toggle: switch between light and dark and remember the choice.
   const handleToggleTheme = () => {
-    setIsDarkMode((prev) => !prev);
+    const next = { ...themePrefs, theme: isDarkMode ? 'light' : 'dark' };
+    setThemePrefs(next);
+    saveTheme(next);
+  };
+
+  // Settings page: save the chosen theme.
+  const handleThemeSave = (next) => {
+    setThemePrefs(next);
+    saveTheme(next);
   };
 
   // Conflict Resolution Action
@@ -126,9 +151,12 @@ export default function App() {
     <div className="bg-surface font-body-md text-on-surface min-h-screen relative selection:bg-primary-container selection:text-on-primary-container overflow-x-hidden">
       {/* Dynamic Ambient Background Blur Nodes */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-[20%] -left-[10%] w-[55vw] h-[55vw] rounded-full bg-primary-container/15 blur-[120px]" />
-        <div className="absolute top-[40%] -right-[15%] w-[50vw] h-[50vw] rounded-full bg-tertiary-container/10 blur-[140px]" />
-        <div className="absolute -bottom-[20%] left-[25%] w-[45vw] h-[45vw] rounded-full bg-secondary-container/10 blur-[130px]" />
+        <div className="ambient-grid absolute inset-0" />
+        <div className="anim-float-a absolute -top-[20%] -left-[10%] w-[55vw] h-[55vw] rounded-full bg-primary-container/15 blur-[120px]" />
+        <div className="anim-float-b absolute top-[40%] -right-[15%] w-[50vw] h-[50vw] rounded-full bg-tertiary-container/10 blur-[140px]" />
+        <div className="anim-float-c absolute -bottom-[20%] left-[25%] w-[45vw] h-[45vw] rounded-full bg-secondary-container/10 blur-[130px]" />
+        {/* extra shimmer layer for Ember palette */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(ellipse 60% 40% at 70% 20%, rgba(var(--glow-a),1), transparent 70%)' }} />
       </div>
 
       {/* Persistent Left Sidebar */}
@@ -157,6 +185,7 @@ export default function App() {
 
         {/* Viewport Content by Active Page */}
         <main className="relative pt-16 w-full px-gutter min-h-screen pb-36">
+          <div key={activePage} className="page-enter">
           {activePage === 'dashboard' && (
             <DashboardPage
               projects={projects}
@@ -205,8 +234,15 @@ export default function App() {
           )}
 
           {activePage === 'settings' && (
-            <SettingsPage tpuUsage={tpuUsage} setTpuUsage={setTpuUsage} />
+            <SettingsPage
+              tpuUsage={tpuUsage}
+              setTpuUsage={setTpuUsage}
+              themePrefs={themePrefs}
+              onThemePreview={setThemePreview}
+              onThemeSave={handleThemeSave}
+            />
           )}
+          </div>
         </main>
       </div>
 

@@ -106,14 +106,22 @@ const STYLES = `
 .dp-root { font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
 .dp-root .font-mono { font-family: inherit; }
 .dp-root h1, .dp-root h2, .dp-root h3, .dp-root h4 { letter-spacing: -0.015em; }
-@keyframes dp-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes dp-rise { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes dp-rise-fast { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes dp-float { 0%, 100% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(26px, -18px, 0) scale(1.08); } }
 @keyframes dp-pan { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
 @keyframes dp-sheen { from { transform: translateX(-120%) skewX(-20deg); } to { transform: translateX(340%) skewX(-20deg); } }
 @keyframes dp-draw { to { stroke-dashoffset: 0; } }
 @keyframes dp-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dp-pop { 0% { transform: scale(.6) rotate(-8deg); opacity:0; } 70% { transform: scale(1.12) rotate(2deg); } 100% { transform: none; opacity:1; } }
+@keyframes dp-glow { 0%,100% { opacity:.6; transform:scale(1); } 50% { opacity:1; transform:scale(1.1); } }
+@keyframes dp-border { from { background-position:0% 50%; } to { background-position:200% 50%; } }
+@keyframes dp-number { 0% { transform:translateY(5px) scale(.88); opacity:0; } 70% { transform:translateY(-2px) scale(1.04); } 100% { transform:none; opacity:1; } }
+@keyframes dp-tick { 0%,100% { transform:scaleY(.3); } 50% { transform:scaleY(1); } }
+@keyframes dp-sparkle { 0%,100% { transform:scale(1) rotate(0); opacity:.8; } 50% { transform:scale(1.3) rotate(20deg); opacity:1; } }
 
-.dp-rise { animation: dp-rise .6s cubic-bezier(.2, .7, .2, 1) backwards; animation-delay: var(--d, 0ms); }
+.dp-rise { animation: dp-rise .65s cubic-bezier(.2, .75, .2, 1) backwards; animation-delay: var(--d, 0ms); }
+.dp-rise-fast { animation: dp-rise-fast .4s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: var(--d, 0ms); }
 .dp-float { animation: dp-float 14s ease-in-out infinite; }
 .dp-float-b { animation: dp-float 18s ease-in-out infinite reverse; }
 .dp-pan { background-size: 200% 100%; animation: dp-pan 5s ease-in-out infinite alternate; }
@@ -122,15 +130,39 @@ const STYLES = `
 .dp-fade { animation: dp-fade .5s 1.6s ease-out backwards; }
 .dp-draw { stroke-dasharray: 100; stroke-dashoffset: 100; animation: dp-draw 1.4s .6s ease-out forwards; }
 .dp-spot { background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgba(76, 215, 246, .12), transparent 65%); }
+.dp-pop { animation: dp-pop .4s cubic-bezier(.2, .9, .3, 1.3) both; }
+.dp-glow { animation: dp-glow 3.5s ease-in-out infinite; }
+.dp-number { animation: dp-number .55s cubic-bezier(.2, .9, .3, 1.3) both; animation-delay: var(--d, 0ms); }
+.dp-tick { transform-origin: center; animation: dp-tick .9s ease-in-out infinite; }
+.dp-sparkle { animation: dp-sparkle 2.4s ease-in-out infinite; }
 .dp-avatars { display: flex; }
 .dp-avatars > * + * { margin-left: -8px; transition: margin-left .25s ease; }
 .group:hover .dp-avatars > * + * { margin-left: -2px; }
 
+/* animated gradient border on card hover */
+.dp-card-border {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(var(--glow-a),.5) 0%, rgba(var(--glow-b),.5) 50%, rgba(var(--glow-a),.5) 100%);
+  background-size: 200% 200%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease;
+  z-index: 0;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+}
+.group:hover .dp-card-border { opacity: 1; animation: dp-border 2.5s linear infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  .dp-rise, .dp-float, .dp-float-b, .dp-pan, .dp-draw, .dp-fade { animation: none !important; }
+  .dp-rise, .dp-rise-fast, .dp-float, .dp-float-b, .dp-pan, .dp-draw, .dp-fade, .dp-pop, .dp-glow, .dp-number, .dp-tick, .dp-sparkle { animation: none !important; }
   .dp-draw { stroke-dashoffset: 0; }
   .group:hover .dp-sheen { animation: none; }
   .dp-spot { display: none; }
+  .group:hover .dp-card-border { animation: none; opacity: .6; }
 }
 `;
 
@@ -260,19 +292,44 @@ const Sparkline = ({ data, className = '' }) => {
 
 const MetricCard = ({ metric, index }) => {
   const delay = 150 + index * 90;
+  const [mx, setMx] = useState(50);
+  const [my, setMy] = useState(50);
+  const cardRef = useRef(null);
+
+  const onMove = (e) => {
+    const r = cardRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setMx(((e.clientX - r.left) / r.width) * 100);
+    setMy(((e.clientY - r.top) / r.height) * 100);
+  };
+
   return (
     <div
-      style={{ '--d': `${delay}ms` }}
-      className="dp-rise group relative overflow-hidden rounded-2xl bg-surface-container/60 backdrop-blur-xl p-space-lg shadow-xl hover:bg-surface-container-high/70 hover:shadow-2xl transition-all duration-300 border border-outline-variant/20"
+      ref={cardRef}
+      onMouseMove={onMove}
+      style={{ '--d': `${delay}ms`, '--mx': `${mx}%`, '--my': `${my}%` }}
+      className="dp-rise group relative overflow-hidden rounded-2xl bg-surface-container/60 backdrop-blur-xl p-space-lg shadow-xl hover:bg-surface-container-high/70 hover:shadow-2xl transition-all duration-300 border border-outline-variant/20 hover:border-primary/30 hover:-translate-y-1"
     >
+      {/* Animated gradient border on hover */}
+      <span className="dp-card-border" aria-hidden="true" />
+
+      {/* Spotlight glow */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        style={{ background: `radial-gradient(240px circle at ${mx}% ${my}%, rgba(var(--glow-a),.12), transparent 70%)` }}
+      />
+
+      {/* Top accent line */}
+      <span className={`absolute inset-x-0 top-0 h-0.5 ${metric.bar} opacity-60 group-hover:opacity-100 transition-opacity duration-300`} aria-hidden="true" />
 
       <div className="relative">
         <div className="flex items-center justify-between mb-space-sm">
-          <span className="text-sm text-on-surface-variant font-medium">
+          <span className="text-sm text-on-surface-variant font-medium tracking-wide">
             {metric.label}
           </span>
           <span
-            className={`p-2 rounded-lg bg-surface-container-highest/60 ${metric.iconTone} material-symbols-outlined text-body-lg transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6`}
+            className={`p-2 rounded-xl bg-surface-container-highest/60 ${metric.iconTone} material-symbols-outlined text-body-lg transition-all duration-300 group-hover:scale-115 group-hover:-rotate-6 group-hover:shadow-lg`}
           >
             {metric.icon}
           </span>
@@ -290,18 +347,18 @@ const MetricCard = ({ metric, index }) => {
               <span className="text-sm text-outline font-mono">{metric.unit}</span>
             )}
             {metric.badge.kind === 'trend' && (
-              <span className="font-mono text-xs text-secondary flex items-center font-semibold">
+              <span className="dp-pop font-mono text-xs text-secondary flex items-center font-semibold bg-secondary/10 px-1.5 py-0.5 rounded-full">
                 <span className="material-symbols-outlined text-sm">trending_up</span>
                 {metric.badge.text}
               </span>
             )}
             {metric.badge.kind === 'delta' && (
-              <span className="font-mono text-xs text-secondary font-medium">
+              <span className="dp-pop font-mono text-xs text-secondary font-medium bg-secondary/10 px-1.5 py-0.5 rounded-full">
                 {metric.badge.text}
               </span>
             )}
             {metric.badge.kind === 'pill' && (
-              <span className="px-space-xs py-0.5 rounded-full bg-tertiary/20 text-tertiary font-mono text-xs font-semibold">
+              <span className="dp-pop px-space-xs py-0.5 rounded-full bg-tertiary/20 text-tertiary font-mono text-xs font-semibold">
                 {metric.badge.text}
               </span>
             )}
@@ -309,7 +366,7 @@ const MetricCard = ({ metric, index }) => {
           <Sparkline data={metric.spark} className={`w-20 h-7 shrink-0 ${metric.sparkTone}`} />
         </div>
 
-        <div className="flex items-center justify-between text-outline text-xs">
+        <div className="flex items-center justify-between text-outline text-xs mb-space-sm">
           <span className={metric.leftTone || ''}>{metric.left}</span>
           <span className="text-xs text-on-surface-variant">{metric.right}</span>
         </div>
@@ -320,9 +377,11 @@ const MetricCard = ({ metric, index }) => {
           aria-valuenow={metric.progress}
           aria-valuemin={0}
           aria-valuemax={100}
-          className="w-full bg-surface-container-highest h-1 rounded-full mt-space-sm overflow-hidden"
+          className="relative w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden"
         >
-          <AnimatedBar value={metric.progress} delay={delay + 200} className={metric.bar} />
+          <AnimatedBar value={metric.progress} delay={delay + 200} className={`${metric.bar} relative`} />
+          {/* shimmer sweep on the bar */}
+          <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent)', animation: 'dp-sheen 1.8s ease-out 1' }} aria-hidden="true" />
         </div>
       </div>
     </div>
@@ -337,8 +396,11 @@ const MetricCard = ({ metric, index }) => {
 const InsightCard = ({ title, subtitle, badge, index = 0, className = '', children }) => (
   <div
     style={{ '--d': `${200 + index * 90}ms` }}
-    className={`dp-rise relative rounded-2xl bg-surface-container/60 backdrop-blur-xl p-space-lg shadow-xl flex flex-col gap-space-sm ${className}`}
+    className={`dp-rise group relative rounded-2xl bg-surface-container/60 backdrop-blur-xl p-space-lg shadow-xl flex flex-col gap-space-sm border border-outline-variant/20 hover:border-outline-variant/40 hover:shadow-2xl transition-all duration-300 overflow-hidden ${className}`}
   >
+    {/* subtle top gradient line */}
+    <span className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-outline-variant/50 to-transparent" aria-hidden="true" />
+
     <div className="flex items-start justify-between gap-3">
       <div>
         <h3 className="text-headline-sm font-semibold text-on-surface">{title}</h3>
@@ -647,16 +709,40 @@ const Avatars = ({ assignees }) => (
 const ProjectCard = ({ project, index, onSelect }) => {
   const assignees = project.assignees || [];
   const delay = 300 + Math.min(index, 8) * 70;
+  const [mx, setMx] = useState(50);
+  const [my, setMy] = useState(50);
+  const ref = useRef(null);
+
+  const onMove = (e) => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    setMx(((e.clientX - r.left) / r.width) * 100);
+    setMy(((e.clientY - r.top) / r.height) * 100);
+  };
+
   return (
     <div
+      ref={ref}
+      onMouseMove={onMove}
       {...asButton(() => onSelect && onSelect(project))}
       aria-label={`Open ${project.title}`}
       style={{ '--d': `${delay}ms` }}
-      className={`dp-rise group relative rounded-2xl bg-surface-container/60 backdrop-blur-xl p-space-lg shadow-xl hover:bg-surface-container-high/80 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between overflow-hidden border border-outline-variant/20 cursor-pointer hover:border-primary/40 hover:-translate-y-0.5 ${FOCUS_RING}`}
+      className={`dp-rise group relative rounded-2xl bg-surface-container/60 backdrop-blur-xl p-space-lg shadow-xl hover:bg-surface-container-high/80 hover:shadow-2xl transition-all duration-300 flex flex-col justify-between overflow-hidden border border-outline-variant/20 cursor-pointer hover:border-primary/35 hover:-translate-y-1 ${FOCUS_RING}`}
     >
+      {/* Gradient top bar */}
       <div
-        className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${project.accentGradient} opacity-80 group-hover:opacity-100 transition-opacity`}
+        className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${project.accentGradient} opacity-70 group-hover:opacity-100 transition-all duration-300 group-hover:h-[3px]`}
       />
+
+      {/* Animated spotlight on hover */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        style={{ background: `radial-gradient(240px circle at ${mx}% ${my}%, rgba(var(--glow-a),.1), transparent 70%)` }}
+      />
+
+      {/* Animated border glow */}
+      <span className="dp-card-border" aria-hidden="true" />
 
       <div className="relative">
         <div className="flex items-center justify-between gap-space-sm mb-space-md">
@@ -664,7 +750,7 @@ const ProjectCard = ({ project, index, onSelect }) => {
           <DueDate project={project} />
         </div>
 
-        <h3 className="text-headline-sm text-on-surface font-semibold mb-space-xs group-hover:text-primary transition-colors">
+        <h3 className="text-headline-sm text-on-surface font-semibold mb-space-xs group-hover:text-primary transition-colors duration-200">
           {project.title}
         </h3>
         <p className="text-body-sm text-on-surface-variant mb-space-lg line-clamp-2 leading-relaxed">
@@ -676,7 +762,7 @@ const ProjectCard = ({ project, index, onSelect }) => {
             <span className="text-on-surface-variant">Progress</span>
             <span className="text-on-surface font-medium flex items-center gap-1">
               {project.progressPercent >= 100 && (
-                <span className="material-symbols-outlined text-sm text-secondary">check_circle</span>
+                <span className="material-symbols-outlined text-sm text-secondary dp-pop">check_circle</span>
               )}
               {project.completedTasks} of {project.totalTasks} tasks · {project.progressPercent}%
             </span>
@@ -687,12 +773,17 @@ const ProjectCard = ({ project, index, onSelect }) => {
             aria-valuenow={project.progressPercent}
             aria-valuemin={0}
             aria-valuemax={100}
-            className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden"
+            className="relative w-full bg-surface-container-highest h-2 rounded-full overflow-hidden"
           >
             <AnimatedBar
               value={project.progressPercent}
               delay={delay + 150}
-              className={`bg-gradient-to-r ${project.accentGradient}`}
+              className={`bg-gradient-to-r ${project.accentGradient} relative`}
+            />
+            {/* shimmer on bar */}
+            <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: 'linear-gradient(90deg, transparent 20%, rgba(255,255,255,.3) 50%, transparent 80%)', backgroundSize: '200% 100%', animation: 'dp-pan 1.5s ease-out 1' }}
+              aria-hidden="true"
             />
           </div>
         </div>
@@ -702,7 +793,7 @@ const ProjectCard = ({ project, index, onSelect }) => {
         <Avatars assignees={assignees} />
         <span className="flex items-center gap-1 text-outline font-mono text-label-sm">
           {project.code}
-          <span className="material-symbols-outlined text-body-lg text-primary opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
+          <span className="material-symbols-outlined text-body-lg text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
             arrow_forward
           </span>
         </span>
@@ -886,14 +977,20 @@ export const DashboardPage = ({
       <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md py-space-lg">
         <div className="flex flex-col gap-2">
           <div className="flex items-center flex-wrap gap-3">
-            <h1 className="text-3xl font-semibold text-on-surface">
-              {getGreeting()}, {userName}
+            <h1 className="text-3xl font-semibold text-on-surface" style={{ letterSpacing: '-0.02em' }}>
+              {getGreeting()},{' '}
+              <span style={{ background: 'linear-gradient(135deg, rgb(var(--glow-a)), rgb(var(--glow-b)))', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                {userName}
+              </span>
             </h1>
             <div
               title="Sprint 14 is 84% on schedule"
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high/80 backdrop-blur-md shadow-sm border border-outline-variant/20"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high/80 backdrop-blur-md shadow-sm border border-secondary/20 hover:border-secondary/40 transition-colors"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inset-0 rounded-full bg-secondary animate-ping opacity-70" />
+                <span className="relative rounded-full bg-secondary w-1.5 h-1.5" />
+              </span>
               <span className="text-sm text-secondary font-medium">
                 Sprint 14 · 84% on schedule
               </span>
@@ -917,9 +1014,11 @@ export const DashboardPage = ({
               <span
                 key={i}
                 style={{ '--d': `${300 + i * 40}ms` }}
-                className={`dp-rise w-1.5 h-3.5 rounded-full ${
-                  i < CYCLE_DAY ? 'bg-secondary' : 'bg-surface-container-highest'
-                } ${i === CYCLE_DAY - 1 ? 'animate-pulse' : ''}`}
+                className={`dp-rise w-1.5 rounded-full transition-all duration-500 ${
+                  i < CYCLE_DAY
+                    ? `bg-secondary h-4 ${i === CYCLE_DAY - 1 ? 'animate-pulse shadow-[0_0_6px_2px_rgba(var(--glow-b),.5)]' : ''}`
+                    : 'bg-surface-container-highest h-3 opacity-50'
+                }`}
               />
             ))}
           </div>
@@ -929,7 +1028,7 @@ export const DashboardPage = ({
           <button
             onClick={onOpenQuickTask}
             title="Create a task without opening a project"
-            className={`group flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-surface-container/70 backdrop-blur-lg hover:bg-surface-container-high text-on-surface transition-all duration-200 shadow-sm hover:shadow-md active:scale-95 border border-outline-variant/30 cursor-pointer ${FOCUS_RING}`}
+            className={`group flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-surface-container/70 backdrop-blur-lg hover:bg-surface-container-high text-on-surface transition-all duration-200 shadow-sm hover:shadow-md active:scale-95 border border-outline-variant/30 hover:border-outline-variant/60 cursor-pointer ${FOCUS_RING}`}
             type="button"
           >
             <span className="material-symbols-outlined text-headline-sm text-secondary group-hover:rotate-90 transition-transform duration-300">
@@ -942,8 +1041,11 @@ export const DashboardPage = ({
             onClick={onOpenGenerateSprint}
             title="Let AI draft a plan for your next sprint"
             className={`group relative overflow-hidden flex items-center gap-space-xs px-space-md py-space-sm rounded-xl bg-gradient-to-r from-primary-container via-secondary-container to-primary-container text-on-primary-container text-body-md font-semibold transition-all duration-300 shadow-lg shadow-primary-container/20 hover:shadow-xl hover:shadow-primary-container/40 hover:-translate-y-0.5 active:scale-95 cursor-pointer ${FOCUS_RING}`}
+            style={{ backgroundSize: '200% 100%' }}
             type="button"
           >
+            {/* shimmer sweep */}
+            <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" aria-hidden="true" />
             <span className="relative material-symbols-outlined text-headline-sm transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110">
               auto_awesome
             </span>
