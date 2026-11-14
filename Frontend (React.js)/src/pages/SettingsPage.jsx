@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PALETTES, THEME_DEFAULTS, resolveMode } from '../theme';
+import BillingSection from '../components/BillingSection';
 
 /* ==========================================================================
    SettingsPage (enhanced)
@@ -40,6 +41,7 @@ const NAV = [
   { id: 'notifications', label: 'Notifications', icon: 'notifications', group: 'Alerts' },
   { id: 'security', label: 'Security', icon: 'security', group: 'Security & data' },
   { id: 'data', label: 'Data & privacy', icon: 'database', group: 'Security & data' },
+  { id: 'billing', label: 'Billing & plan', icon: 'credit_card', group: 'Billing' },
 ];
 const SECTION_IDS = NAV.map((n) => n.id);
 const LABEL_OF = Object.fromEntries(NAV.map((n) => [n.id, n.label]));
@@ -1039,6 +1041,7 @@ export const SettingsPage = ({ tpuUsage, setTpuUsage, onSettingsSave, themePrefs
           <NotificationsSection {...common('notifications', 3)} />
           <SecuritySection {...common('security', 4)} />
           <DataSection {...common('data', 5)} onExport={handleExport} />
+          <BillingSection delay={6 * 60} onNotify={toast.show} />
           <SaveBar dirtyCount={dirtyCount} editedNames={editedNames} justSaved={justSaved} onSave={handleSave} onDiscard={handleDiscard} />
         </main>
       </div>
